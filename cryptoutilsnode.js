@@ -123,7 +123,7 @@
     AHex = (await noble.getPublicKey(nHex));
     lB = (await B.multiply(lBigInt));
     symkey = this.sha512Hex(lB.toHex());
-    gibbrish = securityprimitives.symetricEncryptHex(content, symkey);
+    gibbrish = this.symetricEncryptHex(content, symkey);
     referencePoint = AHex;
     encryptedContent = gibbrish;
     return {referencePoint, encryptedContent};
