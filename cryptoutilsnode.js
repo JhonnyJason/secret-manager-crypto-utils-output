@@ -151,7 +151,7 @@
     kA = (await A.multiply(kBigInt));
     symkey = this.sha512Hex(kA.toHex());
     gibbrishHex = secrets.encryptedContent;
-    content = securityprimitives.symetricDecryptHex(gibbrishHex, symkey);
+    content = this.symetricDecryptHex(gibbrishHex, symkey);
     return content;
   };
 
