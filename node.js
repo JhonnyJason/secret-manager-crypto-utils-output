@@ -198,8 +198,8 @@
   //region signatures
   node.createSignature = async function(content, signingKeyHex) {
     var hashHex;
-    hashHex = (await this.sha256Hex(content));
-    return (await noble.sign(hashHex, secretKeyHex));
+    hashHex = this.sha256Hex(content);
+    return (await noble.sign(hashHex, signingKeyHex));
   };
 
   node.verify = async function(sigHex, keyHex, content) {

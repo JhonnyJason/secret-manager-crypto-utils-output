@@ -216,7 +216,7 @@
   browser.createSignature = async function(content, signingKeyHex) {
     var hashHex;
     hashHex = (await this.sha256Hex(content));
-    return (await noble.sign(hashHex, secretKeyHex));
+    return (await noble.sign(hashHex, signingKeyHex));
   };
 
   browser.verify = async function(sigHex, keyHex, content) {
