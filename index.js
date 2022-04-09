@@ -151,11 +151,11 @@ export var verifyBytes = async function(sigBytes, keyBytes, content) {
 //endregion
 
 //###########################################################
-//region symetric encryption
+//region symmetric encryption
 
 //###########################################################
 // Hex Version
-export var symetricEncrypt = function(content, keyHex) {
+export var symmetricEncrypt = function(content, keyHex) {
   var aesKeyBuffer, aesKeyHex, cipher, gibbrish, ivBuffer, ivHex;
   ivHex = keyHex.substring(0, 32);
   ivBuffer = Buffer.from(ivHex, "hex");
@@ -173,7 +173,7 @@ export var symetricEncrypt = function(content, keyHex) {
   return gibbrish;
 };
 
-export var symetricDecrypt = function(gibbrishHex, keyHex) {
+export var symmetricDecrypt = function(gibbrishHex, keyHex) {
   var aesKeyBuffer, aesKeyHex, content, decipher, ivBuffer, ivHex;
   ivHex = keyHex.substring(0, 32);
   ivBuffer = Buffer.from(ivHex, "hex");
@@ -191,13 +191,13 @@ export var symetricDecrypt = function(gibbrishHex, keyHex) {
   return content;
 };
 
-export var symetricEncryptHex = symetricEncrypt;
+export var symmetricEncryptHex = symmetricEncrypt;
 
-export var symetricDecryptHex = symetricDecrypt;
+export var symmetricDecryptHex = symmetricDecrypt;
 
 //###########################################################
 // Byte Version
-export var symetricEncryptBytes = function(content, keyBytes) {
+export var symmetricEncryptBytes = function(content, keyBytes) {
   var aesKeyBuffer, allGibbrish, cipher, gibbrish, gibbrishFinal, ivBuffer;
   ivBuffer = Buffer.from(keyBytes.buffer, 0, 16);
   aesKeyBuffer = Buffer.from(keyBytes.buffer, 16, 32);
@@ -208,7 +208,7 @@ export var symetricEncryptBytes = function(content, keyBytes) {
   return new Uint8Array(allGibbrish);
 };
 
-export var symetricDecryptBytes = function(gibbrishBytes, keyBytes) {
+export var symmetricDecryptBytes = function(gibbrishBytes, keyBytes) {
   var aesKeyBuffer, content, decipher, ivBuffer;
   ivBuffer = Buffer.from(keyBytes.buffer, 0, 16);
   aesKeyBuffer = Buffer.from(keyBytes.buffer, 16, 32);
@@ -223,11 +223,11 @@ export var symetricDecryptBytes = function(gibbrishBytes, keyBytes) {
 //endregion
 
 //###########################################################
-//region asymetric encryption
+//region asymmetric encryption
 
 //###########################################################
 // Hex Version
-export var asymetricEncryptOld = async function(content, publicKeyHex) {
+export var asymmetricEncryptOld = async function(content, publicKeyHex) {
   var ABytes, B, BHex, encryptedContentHex, gibbrish, lB, lBigInt, nBytes, nHex, referencePointHex, symkey;
   // a = Private Key
   // k = sha512(a) -> hashToScalar
@@ -241,7 +241,7 @@ export var asymetricEncryptOld = async function(content, publicKeyHex) {
   // l = sha512(n) -> hashToScalar
   // lB = lkG = shared secret
   // key = sha512(lBHex)
-  // X = symetricEncrypt(content, key)
+  // X = symmetricEncrypt(content, key)
   // A = lG = one time public reference point
   // {A,X} = data to be stored for B
 
@@ -254,13 +254,13 @@ export var asymetricEncryptOld = async function(content, publicKeyHex) {
   ABytes = (await noble.getPublicKey(nHex));
   lB = (await B.multiply(lBigInt));
   symkey = sha512Hex(lB.toHex());
-  gibbrish = symetricEncryptHex(content, symkey);
+  gibbrish = symmetricEncryptHex(content, symkey);
   referencePointHex = tbut.bytesToHex(ABytes);
   encryptedContentHex = gibbrish;
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymetricDecryptOld = async function(secrets, privateKeyHex) {
+export var asymmetricDecryptOld = async function(secrets, privateKeyHex) {
   var A, AHex, aBytes, content, gibbrishHex, kA, kBigInt, symkey;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
@@ -278,27 +278,28 @@ export var asymetricDecryptOld = async function(secrets, privateKeyHex) {
   // A = lG = one time public reference point 
   // klG = lB = kA = shared secret
   // key = sha512(kAHex)
-  // content = symetricDecrypt(X, key)
+  // content = symmetricDecrypt(X, key)
   A = noble.Point.fromHex(AHex);
   kA = (await A.multiply(kBigInt));
   symkey = sha512Hex(kA.toHex());
-  content = symetricDecryptHex(gibbrishHex, symkey);
+  content = symmetricDecryptHex(gibbrishHex, symkey);
   return content;
 };
 
-export var asymetricEncrypt = async function(content, publicKeyHex) {
+export var asymmetricEncrypt = async function(content, publicKeyHex) {
   var A, encryptedContentHex, gibbrish, lB, nBytes, referencePointHex, symkey;
   nBytes = noble.utils.randomPrivateKey();
   A = (await noble.getPublicKey(nBytes));
   lB = (await noble.getSharedSecret(nBytes, publicKeyHex));
   symkey = sha512Bytes(lB);
-  gibbrish = symetricEncryptBytes(content, symkey);
+  // symkey = sha512Bytes(tbut.bytesToHex(lB))
+  gibbrish = symmetricEncryptBytes(content, symkey);
   referencePointHex = tbut.bytesToHex(A);
   encryptedContentHex = tbut.bytesToHex(gibbrish);
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymetricDecrypt = async function(secrets, privateKeyHex) {
+export var asymmetricDecrypt = async function(secrets, privateKeyHex) {
   var AHex, content, gibbrishBytes, gibbrishHex, kA, symkey;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
@@ -307,30 +308,31 @@ export var asymetricDecrypt = async function(secrets, privateKeyHex) {
   }
   kA = (await noble.getSharedSecret(privateKeyHex, AHex));
   symkey = sha512Bytes(kA);
+  // symkey = sha512Bytes(tbut.bytesToHex(kA))
   gibbrishBytes = tbut.hexToBytes(gibbrishHex);
-  content = symetricDecryptBytes(gibbrishBytes, symkey);
+  content = symmetricDecryptBytes(gibbrishBytes, symkey);
   return content;
 };
 
-export var asymetricEncryptHex = asymetricEncrypt;
+export var asymmetricEncryptHex = asymmetricEncrypt;
 
-export var asymetricDecryptHex = asymetricDecrypt;
+export var asymmetricDecryptHex = asymmetricDecrypt;
 
 //###########################################################
 // Byte Version
-export var asymetricEncryptBytes = async function(content, publicKeyBytes) {
+export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
   var ABytes, encryptedContentBytes, gibbrishBytes, lB, nBytes, referencePointBytes, symkeyBytes;
   nBytes = noble.utils.randomPrivateKey();
   ABytes = (await noble.getPublicKey(nBytes));
   lB = (await noble.getSharedSecret(nBytes, publicKeyBytes));
   symkeyBytes = sha512Bytes(lB);
-  gibbrishBytes = symetricEncryptBytes(content, symkeyBytes);
+  gibbrishBytes = symmetricEncryptBytes(content, symkeyBytes);
   referencePointBytes = ABytes;
   encryptedContentBytes = gibbrishBytes;
   return {referencePointBytes, encryptedContentBytes};
 };
 
-export var asymetricDecryptBytes = async function(secrets, privateKeyBytes) {
+export var asymmetricDecryptBytes = async function(secrets, privateKeyBytes) {
   var ABytes, content, gibbrishBytes, kABytes, symkeyBytes;
   ABytes = secrets.referencePointBytes || secrets.referencePoint;
   gibbrishBytes = secrets.encryptedContentBytes || secrets.encryptedContent;
@@ -339,7 +341,7 @@ export var asymetricDecryptBytes = async function(secrets, privateKeyBytes) {
   }
   kABytes = (await noble.getSharedSecret(privateKeyBytes, ABytes));
   symkeyBytes = sha512Bytes(kABytes);
-  content = symetricDecryptBytes(gibbrishBytes, symkeyBytes);
+  content = symmetricDecryptBytes(gibbrishBytes, symkeyBytes);
   return content;
 };
 
