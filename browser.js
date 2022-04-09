@@ -94,7 +94,7 @@ export var sha256Bytes = async function(content) {
   } else {
     contentBytes = content;
   }
-  return (await crypto.digest("SHA-256", contentBytes));
+  return new Uint8Array((await crypto.digest("SHA-256", contentBytes)));
 };
 
 export var sha512Bytes = async function(content) {
@@ -104,8 +104,9 @@ export var sha512Bytes = async function(content) {
   } else {
     contentBytes = content;
   }
-  return (await crypto.digest("SHA-512", contentBytes));
+  return new Uint8Array((await crypto.digest("SHA-512", contentBytes)));
 };
+
 
 //endregion
 
@@ -211,18 +212,18 @@ export var symmetricEncrypt = async function(content, keyHex) {
 };
 
 export var symmetricDecrypt = async function(gibbrishHex, keyHex) {
-  var aesKeyHex, algorithm, contentBuffer, gibbrishBuffer, ivBuffer, ivHex, keyObjHex;
+  var aesKeyHex, algorithm, contentBytes, gibbrishBytes, ivBytes, ivHex, keyObjHex;
   ivHex = keyHex.substring(0, 32);
   aesKeyHex = keyHex.substring(32, 96);
-  ivBuffer = tbut.hexToBytes(ivHex);
-  gibbrishBuffer = tbut.hexToBytes(gibbrishHex);
+  ivBytes = tbut.hexToBytes(ivHex);
+  gibbrishBytes = tbut.hexToBytes(gibbrishHex);
   keyObjHex = (await createKeyObjectHex(aesKeyHex));
   algorithm = {
     name: "AES-CBC",
-    iv: ivBuffer
+    iv: ivBytes
   };
-  contentBuffer = (await crypto.decrypt(algorithm, keyObjHex, gibbrishBuffer));
-  return tbut.bytesToUtf8(contentBuffer);
+  contentBytes = (await crypto.decrypt(algorithm, keyObjHex, gibbrishBytes));
+  return tbut.bytesToUtf8(contentBytes);
 };
 
 export var symmetricEncryptHex = symmetricEncrypt;
@@ -233,9 +234,7 @@ export var symmetricDecryptHex = symmetricDecrypt;
 // Byte Version
 export var symmetricEncryptBytes = async function(content, keyBytes) {
   var aesKeyBytes, algorithm, contentBytes, gibbrishBytes, ivBytes, keyObjBytes;
-  // ivHex = keyHex.substring(0, 32)
   ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
-  // aesKeyHex = keyHex.substring(32,96)
   aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
   contentBytes = tbut.utf8ToBytes(content);
   keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
@@ -251,9 +250,7 @@ export var symmetricDecryptBytes = async function(gibbrishBytes, keyBytes) {
   var aesKeyBytes, algorithm, contentBytes, ivBytes, keyObjBytes;
   ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
   aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
-  // ivHex = keyHex.substring(0, 32)
-  // aesKeyHex = keyHex.substring(32,96)
-  keyObjBytes = (await createKeyObjectHex(aesKeyBytes));
+  keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
   algorithm = {
     name: "AES-CBC",
     iv: ivBytes
