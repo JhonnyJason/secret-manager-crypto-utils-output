@@ -66,42 +66,42 @@ secUtl.verifyBytes( signature, publicKey, content )
 secUtl.verifyHex( Uint8Array, Uint8Array, String) -> Boolean
 
 
-## encryption - symetric
-secUtl.symetricEncrypt = secUtl.symetricEncryptHex
-secUtl.symetricEncryptHex( content, symKey )
-secUtl.symetricEncryptHex( String, StringHex ) -> StringHex
+## encryption - symmetric
+secUtl.symmetricEncrypt = secUtl.symmetricEncryptHex
+secUtl.symmetricEncryptHex( content, symKey )
+secUtl.symmetricEncryptHex( String, StringHex ) -> StringHex
 
-secUtl.symetricEncryptBytes( content, symKey )
-secUtl.symetricEncryptBytes( String, Uint8Array ) -> Uint8Array
-
-
-secUtl.symetricDecrypt = secUtl.symetricDecryptHex
-secUtl.symetricDecryptHex( encryptedContent, symKey )
-secUtl.symetricDecryptHex( StringHex, StringHex ) -> String
-
-secUtl.symetricDecryptBytes( encryptedContent, symKey )
-secUtl.symetricDecryptBytes( Uint8Array, Uint8Array ) -> String
+secUtl.symmetricEncryptBytes( content, symKey )
+secUtl.symmetricEncryptBytes( String, Uint8Array ) -> Uint8Array
 
 
-## encryption - asymetric
-secUtl.asymetricEncrypt = secUtl.asymetricEncryptHex
-secUtl.asymetricEncryptHex( content, publicKey )
-secUtl.asymetricEncryptHex( String, StringHex ) -> Object { referencePointHex, encryptetContentsHex }
-secUtl.asymetricEncryptHex( String, StringHex ) -> Object { StringHex, StringHex}
+secUtl.symmetricDecrypt = secUtl.symmetricDecryptHex
+secUtl.symmetricDecryptHex( encryptedContent, symKey )
+secUtl.symmetricDecryptHex( StringHex, StringHex ) -> String
 
-secUtl.asymetricEncryptBytes( content, publicKey )
-secUtl.asymetricEncryptBytes( String, Uint8Array ) -> Object { referencePointBytes, encryptedContentsBytes }
-secUtl.asymetricEncryptBytes( String, Uint8Array ) -> Object { Uint8Array, Uint8Array }
+secUtl.symmetricDecryptBytes( encryptedContent, symKey )
+secUtl.symmetricDecryptBytes( Uint8Array, Uint8Array ) -> String
 
 
-secUtl.asymetricDecrypt = secUtl.asymetricDecryptHex
-secUtl.asymetricDecryptHex( secretsObject, privateKey )
-secUtl.asymetricDecryptHex( Object { referencePointHex, encryptedContentsHex }, StringHex }, StringHex ) -> String
-secUtl.asymetricDecryptHex( Object { StringHex, StringHex }, StringHex }, StringHex ) -> String
+## encryption - asymmetric
+secUtl.asymmetricEncrypt = secUtl.asymmetricEncryptHex
+secUtl.asymmetricEncryptHex( content, publicKey )
+secUtl.asymmetricEncryptHex( String, StringHex ) -> Object { referencePointHex, encryptetContentsHex }
+secUtl.asymmetricEncryptHex( String, StringHex ) -> Object { StringHex, StringHex}
 
-secUtl.asymetricDecryptBytes( secretsObject, privateKey )
-secUtl.asymetricDecryptBytes( Object { referencePointBytes, encryptedContentsBytes }, StringHex ) -> String
-secUtl.asymetricDecryptBytes( Object { Uint8Array, Uint8Array }, StringHex ) -> String
+secUtl.asymmetricEncryptBytes( content, publicKey )
+secUtl.asymmetricEncryptBytes( String, Uint8Array ) -> Object { referencePointBytes, encryptedContentsBytes }
+secUtl.asymmetricEncryptBytes( String, Uint8Array ) -> Object { Uint8Array, Uint8Array }
+
+
+secUtl.asymmetricDecrypt = secUtl.asymmetricDecryptHex
+secUtl.asymmetricDecryptHex( secretsObject, privateKey )
+secUtl.asymmetricDecryptHex( Object { referencePointHex, encryptedContentsHex }, StringHex }, StringHex ) -> String
+secUtl.asymmetricDecryptHex( Object { StringHex, StringHex }, StringHex }, StringHex ) -> String
+
+secUtl.asymmetricDecryptBytes( secretsObject, privateKey )
+secUtl.asymmetricDecryptBytes( Object { referencePointBytes, encryptedContentsBytes }, StringHex ) -> String
+secUtl.asymmetricDecryptBytes( Object { Uint8Array, Uint8Array }, StringHex ) -> String
 
 ## salts
 secUtl.createRandomLengthSalt() -> String
@@ -109,22 +109,38 @@ secUtl.removeSalt( String ) -> String
 
 ```
 
+## Breaking Updates
+From `0.0.x` -> `0.1.0`
+
+### API Changes
+The API has changed as spelling mistake has been corrected:
+- symetric -> symmetric
+- asymetric -> asymmetric
+
+### Incompatibility
+Also the asymmetric encryption algorithm has slightly changed, specifically just how the shared secret is calculated. The result is that secrets being encrypted with the old version are not decryptable with the newer version and vice-versa.
+
+To combat this we have included the old style functions as well, which only exist in the hex version:
+- asymmetricEncryptOld(content, publicKeyHex)
+- asymmetricDecryptOld(secrets, privateKeyHex)
+
+
 ## Hex FTW
 For good reasons all encrypted contents, signatures and keys are stored in hex strings. This appears to be the most superior way of how to universally transfer byte information.
 
 The big wins of hex in readability and processability beats out the "downside" of being 2x the size.
 
-### Performance is more important?
-Don't worry, we also have the versions using bytes, buffers, and specifically Uint8Arrays. To skip all the conversions back and forth. Use the Uint8Arrays in your code and use the byte-versions then.
+## Performance is more important?
+We also have the versions using bytes, buffers, and specifically Uint8Arrays. To skip all the conversions back and forth. Use the Uint8Arrays in your code and use the byte-versions then.
 
-This is the reason why we have for each function the functionHex version and the functionBytes version.
-Because of reasons we assigned the standard function without the postfix to be the hex version.
+We have for each function the `functionHex` version and the `functionBytes` version.
+Because of reasons we assigned the standard `function` without the postfix to be the hex version.
 
-The reason is simply: The person who wants to skip the explicit version is more likely the be the one who needs the enhancanced readability later. ;-) 
+*The reason is simply: The person who wants to skip the explicit version is more likely the be the one who needs the enhancanced readability later. ;-)*
 
 
 ## Encryption
-For the encryption functionality we use ed25519 keys for producing El-Gamal-style shared secret keys which we then use for symetrically encrypting the contents.
+For the encryption functionality we use ed25519 keys for producing El-Gamal-style shared secret keys which we then use for symmetrically encrypting the contents.
 
 The result of this kind of encryption is always an Object like:
 ```json
@@ -134,7 +150,9 @@ The result of this kind of encryption is always an Object like:
 }
 ```
 
-The symetric encryption uses `aes-256-cbc`.
+The symmetric encryption uses `aes-256-cbc`.
+
+*Notice: it is your responsibility to salt your contents to be encrypted.*
 
 ## Noble ed25519
 All of this is straight forward based on [noble-ed25519](https://github.com/paulmillr/noble-ed25519). A very concise and modern package for freely using the ed25519 algorithms. Big thanks for that!
@@ -149,6 +167,7 @@ All sorts of inputs are welcome, thanks!
 - The salt functionality is to create a random string of random length terminated by a `0` byte
 - The random length is limited to be at max 511bytes
 - The `removeSalt` would cut off all bytes until it reaches the first `0` byte
+- Using AES-256-CBC in combination with this random length salt prefix effectivly eliminates the known plaintext attack surface.
 
 # License
 
