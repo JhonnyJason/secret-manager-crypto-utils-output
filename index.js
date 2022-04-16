@@ -92,9 +92,16 @@ export var createSymKey = function() {
   return tbut.bytesToHex(keyAndIV);
 };
 
+export var publicKey = async function(secretKey) {
+  publicKey = (await noble.getPublicKey(secretKey));
+  return tbut.bytesToHex(publicKey);
+};
+
 export var createKeyPairHex = createKeyPair;
 
 export var createSymKeyHex = createSymKey;
+
+export var publicKeyHex = publicKey;
 
 //###########################################################
 // Byte Version
@@ -107,6 +114,10 @@ export var createKeyPairBytes = async function() {
 
 export var createSymKeyBytes = function() {
   return new Uint8Array((crypto.randomBytes(48)).buffer);
+};
+
+export var publicKeyBytes = async function(secretKey) {
+  return (await noble.getPublicKey(secretKeyBytes));
 };
 
 //endregion
