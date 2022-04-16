@@ -116,11 +116,11 @@ export var sha512Bytes = async function(content) {
 //###########################################################
 // Hex Version
 export var createKeyPair = async function() {
-  var publicKey, publicKeyHex, secretKey, secretKeyHex;
-  secretKey = noble.utils.randomPrivateKey();
-  publicKey = (await noble.getPublicKey(secretKey));
-  secretKeyHex = tbut.bytesToHex(secretKey);
-  publicKeyHex = tbut.bytesToHex(publicKey);
+  var publicKeyBytes, publicKeyHex, secretKeyBytes, secretKeyHex;
+  secretKeyBytes = noble.utils.randomPrivateKey();
+  publicKeyBytes = (await noble.getPublicKey(secretKeyBytes));
+  secretKeyHex = tbut.bytesToHex(secretKeyBytes);
+  publicKeyHex = tbut.bytesToHex(publicKeyBytes);
   return {secretKeyHex, publicKeyHex};
 };
 
@@ -131,16 +131,17 @@ export var createSymKey = function() {
   return tbut.bytesToHex(keyAndIV);
 };
 
-export var publicKey = async function(secretKey) {
-  publicKey = (await noble.getPublicKey(secretKey));
-  return tbut.bytesToHex(publicKey);
+export var createPublicKey = async function(secretKeyHex) {
+  var publicKeyBytes;
+  publicKeyBytes = (await noble.getPublicKey(secretKeyHex));
+  return tbut.bytesToHex(publicKeyBytes);
 };
 
 export var createKeyPairHex = createKeyPair;
 
 export var createSymKeyHex = createSymKey;
 
-export var publicKeyHex = publicKey;
+export var createPublicKeyHex = createPublicKey;
 
 //###########################################################
 // Byte Version
@@ -158,7 +159,7 @@ export var createSymKeyBytes = function() {
   return keyAndIV;
 };
 
-export var publicKeyBytes = async function(secretKey) {
+export var createPublicKeyBytes = async function(secretKeyBytes) {
   return (await noble.getPublicKey(secretKeyBytes));
 };
 
@@ -279,7 +280,7 @@ export var symmetricDecryptBytes = async function(gibbrishBytes, keyBytes) {
 // Hex Version
 export var asymmetricEncryptOld = async function(content, publicKeyHex) {
   var ABytes, B, BHex, encryptedContentHex, gibbrish, lB, lBigInt, nBytes, nHex, referencePointHex, symkey;
-  // a = Private Key
+  // a = Secret Key
   // k = sha512(a) -> hashToScalar
   // G = basePoint
   // B = kG = Public Key
@@ -310,18 +311,18 @@ export var asymmetricEncryptOld = async function(content, publicKeyHex) {
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymmetricDecryptOld = async function(secrets, privateKeyHex) {
+export var asymmetricDecryptOld = async function(secrets, secretKeyHex) {
   var A, AHex, aBytes, content, gibbrishHex, kA, kBigInt, symkey;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
   if ((AHex == null) || (gibbrishHex == null)) {
     throw new Error("Invalid secrets Object!");
   }
-  // a = Private Key
+  // a = Secret Key
   // k = sha512(a) -> hashToScalar
   // G = basePoint
   // B = kG = Public Key
-  aBytes = tbut.hexToBytes(privateKeyHex);
+  aBytes = tbut.hexToBytes(secretKeyHex);
   kBigInt = hashToScalar((await sha512Bytes(aBytes)));
   
   // {A,X} = secrets
@@ -348,14 +349,14 @@ export var asymmetricEncrypt = async function(content, publicKeyHex) {
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymmetricDecrypt = async function(secrets, privateKeyHex) {
+export var asymmetricDecrypt = async function(secrets, secretKeyHex) {
   var AHex, content, gibbrishBytes, gibbrishHex, kA, symkey;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
   if ((AHex == null) || (gibbrishHex == null)) {
     throw new Error("Invalid secrets Object!");
   }
-  kA = (await noble.getSharedSecret(privateKeyHex, AHex));
+  kA = (await noble.getSharedSecret(secretKeyHex, AHex));
   symkey = (await sha512Bytes(kA));
   gibbrishBytes = tbut.hexToBytes(gibbrishHex);
   content = (await symmetricDecryptBytes(gibbrishBytes, symkey));
@@ -380,14 +381,14 @@ export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
   return {referencePointBytes, encryptedContentBytes};
 };
 
-export var asymmetricDecryptBytes = async function(secrets, privateKeyBytes) {
+export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
   var ABytes, content, gibbrishBytes, kABytes, symkeyBytes;
   ABytes = secrets.referencePointBytes || secrets.referencePoint;
   gibbrishBytes = secrets.encryptedContentBytes || secrets.encryptedContent;
   if ((ABytes == null) || (gibbrishBytes == null)) {
     throw new Error("Invalid secrets Object!");
   }
-  kABytes = (await noble.getSharedSecret(privateKeyBytes, ABytes));
+  kABytes = (await noble.getSharedSecret(secretKeyBytes, ABytes));
   symkeyBytes = (await sha512Bytes(kABytes));
   content = (await symmetricDecryptBytes(gibbrishBytes, symkeyBytes));
   return content;
