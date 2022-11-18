@@ -426,4 +426,220 @@ export var removeSalt = function(content) {
 
 //endregion
 
+//###########################################################
+//region new Functions on v0.2
+
+//###########################################################
+//region referenced/shared secrets
+
+//###########################################################
+//region Hex Versions
+
+//###########################################################
+// create shared secrets
+export var createSharedSecretHash = async function(secretKeyHex, publicKeyHex, contextString = "") {
+  var BBytes, cBytes, nBBytes, nBytes, sharedSecretBytes, sharedSecretHex;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = tbut.hexToBytes(secretKeyHex);
+  BBytes = tbut.hexToBytes(publicKeyHex);
+  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  cBytes = tbut.utf8ToBytes(contextString);
+  console.log(typeof nBBytes);
+  console.log(typeof cBytes);
+  // seedBytes = Buffer.concat([nBBytes, cBytes])
+  sharedSecretBytes = sha512Bytes(seedBytes);
+  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  return sharedSecretHex;
+};
+
+export var createSharedSecretRaw = async function(secretKeyHex, publicKeyHex) {
+  var BBytes, nBytes, sharedSecretBytes, sharedSecretHex;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = tbut.hexToBytes(secretKeyHex);
+  BBytes = tbut.hexToBytes(publicKeyHex);
+  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  return sharedSecretHex;
+};
+
+export var createSharedSecretHashHex = createSharedSecretHash;
+
+export var createSharedSecretRawHex = createSharedSecretRaw;
+
+//###########################################################
+// create shared secrets with a new reference point
+export var referencedSharedSecretHash = async function(publicKeyHex, contextString = "") {
+  var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointHex, sharedSecretBytes, sharedSecretHex;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = noble.utils.randomPrivateKey();
+  BBytes = tbut.hexToBytes(publicKeyHex);
+  ABytes = (await noble.getPublicKey(nBytes));
+  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  cBytes = tbut.utf8ToBytes(contextString);
+  console.log(typeof nBBytes);
+  console.log(typeof cBytes);
+  // seedBytes = Buffer.concat([nBBytes, cBytes])
+  sharedSecretBytes = sha512Bytes(seedBytes);
+  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  referencePointHex = tbut.bytesToHex(ABytes);
+  return {referencePointHex, sharedSecretHex};
+};
+
+export var referencedSharedSecretRaw = async function(publicKeyHex) {
+  var ABytes, BBytes, nBytes, referencePointHex, sharedSecretBytes, sharedSecretHex;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = noble.utils.randomPrivateKey();
+  BBytes = tbut.hexToBytes(publicKeyHex);
+  ABytes = (await noble.getPublicKey(nBytes));
+  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  referencePointHex = tbut.bytesToHex(ABytes);
+  return {referencePointHex, sharedSecretHex};
+};
+
+export var referencedSharedSecretHashHex = referencedSharedSecretHash;
+
+export var referencedSharedSecretRawHex = referencedSharedSecretRaw;
+
+//endregion
+
+//###########################################################
+//region Bytes Versions
+
+//###########################################################
+// create shared secrets
+export var createSharedSecretHashBytes = async function(secretKeyBytes, publicKeyBytes, contextString = "") {
+  var BBytes, cBytes, nBBytes, nBytes, sharedSecretBytes;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = secretKeyBytes;
+  BBytes = publicKeyBytes;
+  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  cBytes = tbut.utf8ToBytes(contextString);
+  console.log(typeof nBBytes);
+  console.log(typeof cBytes);
+  // seedBytes = Buffer.concat([nBBytes, cBytes])
+  sharedSecretBytes = sha512Bytes(seedBytes);
+  return sharedSecretBytes;
+};
+
+export var createSharedSecretRawBytes = async function(secretKeyBytes, publicKeyBytes) {
+  var BBytes, nBytes, sharedSecretBytes;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = secretKeyBytes;
+  BBytes = publicKeyBytes;
+  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  return sharedSecretBytes;
+};
+
+//###########################################################
+// create shared secrets with a new reference point
+export var referencedSharedSecretHashBytes = async function(publicKeyBytes, contextString = "") {
+  var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointBytes, sharedSecretBytes;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = noble.utils.randomPrivateKey();
+  BBytes = publicKeyBytes;
+  ABytes = (await noble.getPublicKey(nBytes));
+  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  cBytes = tbut.utf8ToBytes(contextString);
+  console.log(typeof nBBytes);
+  console.log(typeof cBytes);
+  // seedBytes = Buffer.concat([nBBytes, cBytes])
+  sharedSecretBytes = sha512Bytes(seedBytes);
+  referencePointBytes = ABytes;
+  return {referencePointBytes, sharedSecretBytes};
+};
+
+export var referencedSharedSecretRawBytes = async function(publicKeyBytes) {
+  var ABytes, BBytes, nBytes, referencePointBytes, sharedSecretBytes;
+  // n = SecretKey
+  // A = referencePoint = nG
+  // B = publicKey = lG
+  // nB = shared Secret = nlG
+  nBytes = noble.utils.randomPrivateKey();
+  BBytes = publicKeyBytes;
+  ABytes = (await noble.getPublicKey(nBytes));
+  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  referencePointBytes = ABytes;
+  return {referencePointBytes, sharedSecretBytes};
+};
+
+//endregion
+
+//endregion
+
+//###########################################################
+//region auth code
+
+//###########################################################
+// Hex Version
+export var authCode = function(seedHex, requestJSON) {
+  var entropySource, requestString;
+  requestString = JSON.stringify(requestJSON);
+  entropySource = seedHex + requestString;
+  return sha256Hex(entropySource);
+};
+
+export var authCodeHex = authCode;
+
+//###########################################################
+// Byte Version
+export var authCodeBytes = function(seedBytes, requestJSON) {
+  var entropySource, requestString, seedHex;
+  requestString = JSON.stringify(requestJSON);
+  seedHex = tbut.bytesToHex(seedBytes);
+  entropySource = seedHex + requestString;
+  return sha256Bytes(entropySource);
+};
+
+//endregion
+
+//###########################################################
+//region session key
+
+//###########################################################
+// Hex Version
+export var sessionKey = function(seedHex, requestJSON) {
+  var entropySource, requestString;
+  requestString = JSON.stringify(requestJSON);
+  entropySource = seedHex + requestString;
+  return sha512Hex(entropySource);
+};
+
+export var sessionKeyHex = sessionKey;
+
+//###########################################################
+// Byte Version
+export var sessionKeyBytes = function(seedBytes, requestJSON) {
+  var entropySource, requestString, seedHex;
+  requestString = JSON.stringify(requestJSON);
+  seedHex = tbut.bytesToHex(seedBytes);
+  entropySource = seedHex + requestString;
+  return sha512Bytes(entropySource);
+};
+
+//endregion
+
+//endregion
+
 //endregion

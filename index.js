@@ -618,4 +618,9 @@ export var removeSalt = function(content) {
 
 //endregion
 
+//###########################################################
+//region new Functions on v0.2
+
+//endregion
+
 //endregion
