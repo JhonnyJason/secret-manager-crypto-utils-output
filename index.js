@@ -132,25 +132,6 @@ export var createPublicKeyBytes = async function(secretKeyBytes) {
 //endregion
 
 //###########################################################
-//region contexed Id
-
-//###########################################################
-// Hex Version
-export var contextId = function(id, context) {
-  return sha256Hex(id + context);
-};
-
-export var contextIdHex = contextId;
-
-//###########################################################
-// Byte Version
-export var contextIdBytes = function(id, context) {
-  return sha256Bytes(id + context);
-};
-
-//endregion
-
-//###########################################################
 //region signatures
 
 //###########################################################
@@ -185,58 +166,6 @@ export var verifyBytes = async function(sigBytes, keyBytes, content) {
   var hashBytes;
   hashBytes = sha256Bytes(content);
   return (await noble.verify(sigBytes, hashBytes, keyBytes));
-};
-
-//endregion
-
-//###########################################################
-//region auth code
-
-//###########################################################
-// Hex Version
-export var authCode = function(seedHex, requestJSON) {
-  var entropySource, requestString;
-  requestString = JSON.stringify(requestJSON);
-  entropySource = seedHex + requestString;
-  return sha256Hex(entropySource);
-};
-
-export var authCodeHex = authCode;
-
-//###########################################################
-// Byte Version
-export var authCodeBytes = function(seedBytes, requestJSON) {
-  var entropySource, requestString, seedHex;
-  requestString = JSON.stringify(requestJSON);
-  seedHex = tbut.bytesToHex(seedBytes);
-  entropySource = seedHex + requestString;
-  return sha256Bytes(entropySource);
-};
-
-//endregion
-
-//###########################################################
-//region session key
-
-//###########################################################
-// Hex Version
-export var sessionKey = function(seedHex, requestJSON) {
-  var entropySource, requestString;
-  requestString = JSON.stringify(requestJSON);
-  entropySource = seedHex + requestString;
-  return sha512Hex(entropySource);
-};
-
-export var sessionKeyHex = sessionKey;
-
-//###########################################################
-// Byte Version
-export var sessionKeyBytes = function(seedBytes, requestJSON) {
-  var entropySource, requestString, seedHex;
-  requestString = JSON.stringify(requestJSON);
-  seedHex = tbut.bytesToHex(seedBytes);
-  entropySource = seedHex + requestString;
-  return sha512Bytes(entropySource);
 };
 
 //endregion
@@ -318,6 +247,8 @@ export var symmetricDecryptBytes = function(gibbrishBytes, keyBytes) {
 
 //###########################################################
 // Hex Version
+
+//###########################################################
 export var asymmetricEncryptOld = async function(content, publicKeyHex) {
   var ABytes, B, BHex, encryptedContentHex, gibbrish, lB, lBigInt, nBytes, nHex, referencePointHex, symkey;
   // a = Secret Key
@@ -377,6 +308,7 @@ export var asymmetricDecryptOld = async function(secrets, secretKeyHex) {
   return content;
 };
 
+//###########################################################
 export var asymmetricEncrypt = async function(content, publicKeyHex) {
   var A, encryptedContentHex, gibbrish, lB, nBytes, referencePointHex, symkey;
   nBytes = noble.utils.randomPrivateKey();
@@ -439,13 +371,12 @@ export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
 //endregion
 
 //###########################################################
-//region referenced shared secrets
+//region referenced/shared secrets
 
 //###########################################################
-//region Hex Versions
+// Hex Versions
 
 //###########################################################
-// create shared secrets
 export var createSharedSecretHash = async function(secretKeyHex, publicKeyHex, contextString = "") {
   var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes, sharedSecretHex;
   // n = SecretKey
@@ -480,7 +411,6 @@ export var createSharedSecretHashHex = createSharedSecretHash;
 export var createSharedSecretRawHex = createSharedSecretRaw;
 
 //###########################################################
-// create shared secrets with a new reference point
 export var referencedSharedSecretHash = async function(publicKeyHex, contextString = "") {
   var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointHex, seedBytes, sharedSecretBytes, sharedSecretHex;
   // n = SecretKey
@@ -518,13 +448,10 @@ export var referencedSharedSecretHashHex = referencedSharedSecretHash;
 
 export var referencedSharedSecretRawHex = referencedSharedSecretRaw;
 
-//endregion
+//###########################################################
+// Bytes Versions
 
 //###########################################################
-//region Bytes Versions
-
-//###########################################################
-// create shared secrets
 export var createSharedSecretHashBytes = async function(secretKeyBytes, publicKeyBytes, contextString = "") {
   var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes;
   // n = SecretKey
@@ -553,7 +480,6 @@ export var createSharedSecretRawBytes = async function(secretKeyBytes, publicKey
 };
 
 //###########################################################
-// create shared secrets with a new reference point
 export var referencedSharedSecretHashBytes = async function(publicKeyBytes, contextString = "") {
   var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointBytes, seedBytes, sharedSecretBytes;
   // n = SecretKey
@@ -587,8 +513,6 @@ export var referencedSharedSecretRawBytes = async function(publicKeyBytes) {
 
 //endregion
 
-//endregion
-
 //###########################################################
 //region salts
 export var createRandomLengthSalt = function() {
@@ -615,11 +539,6 @@ export var removeSalt = function(content) {
   throw new Error("No Salt termination found!");
 };
 
-
-//endregion
-
-//###########################################################
-//region new Functions on v0.2
 
 //endregion
 
