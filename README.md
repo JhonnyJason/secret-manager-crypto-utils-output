@@ -20,7 +20,7 @@ This is directly used from other parts of the [Secret Management](https://hackmd
 Current Functionality
 ---------------------
 
-```coffeescript
+```coffee
 import *  as secUtl from "secret-manager-crypto-utils"
 
 ## shas
@@ -251,17 +251,19 @@ sameSharedSecret = await secUtl.createSharedSecretHash(privB, pubA, context)
 ## Noble ed25519
 All of this is straight forward based on [noble-ed25519](https://github.com/paulmillr/noble-ed25519). A very concise and modern package for freely using the ed25519 algorithms. Big thanks for that!
 
+## Salts
+- The salt functionality is to create a random string of random length terminated by a `0` byte
+- The random length is limited to be at max 511bytes
+- The `removeSalt` would cut off all bytes until it reaches the first `0` byte
+- Using AES-256-CBC in combination with this random length salt prefix effectivly eliminates the known plaintext attack surface.
+
+
 ---
 
 All sorts of inputs are welcome, thanks!
 
 ---
 
-## Salts
-- The salt functionality is to create a random string of random length terminated by a `0` byte
-- The random length is limited to be at max 511bytes
-- The `removeSalt` would cut off all bytes until it reaches the first `0` byte
-- Using AES-256-CBC in combination with this random length salt prefix effectivly eliminates the known plaintext attack surface.
 
 # License
 [Unlicense JhonnyJason style](https://hackmd.io/nCpLO3gxRlSmKVG3Zxy2hA?view)
