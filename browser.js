@@ -209,6 +209,78 @@ export var verifyBytes = async function(sigBytes, keyBytes, content) {
 //###########################################################
 // Hex Version
 export var symmetricEncrypt = async function(content, keyHex) {
+  var aesKeyHex, algorithm, gibbrishBytes, ivBytes, ivHex, keyObjHex, saltedContent;
+  ivHex = keyHex.substring(0, 32);
+  aesKeyHex = keyHex.substring(32, 96);
+  ivBytes = tbut.hexToBytes(ivHex);
+  saltedContent = saltContent(content);
+  keyObjHex = (await createKeyObjectHex(aesKeyHex));
+  algorithm = {
+    name: "AES-CBC",
+    iv: ivBytes
+  };
+  gibbrishBytes = (await crypto.encrypt(algorithm, keyObjHex, saltedContent));
+  return tbut.bytesToHex(gibbrishBytes);
+};
+
+export var symmetricDecrypt = async function(gibbrishHex, keyHex) {
+  var aesKeyHex, algorithm, gibbrishBytes, ivBytes, ivHex, keyObjHex, saltedContent;
+  ivHex = keyHex.substring(0, 32);
+  aesKeyHex = keyHex.substring(32, 96);
+  ivBytes = tbut.hexToBytes(ivHex);
+  gibbrishBytes = tbut.hexToBytes(gibbrishHex);
+  keyObjHex = (await createKeyObjectHex(aesKeyHex));
+  algorithm = {
+    name: "AES-CBC",
+    iv: ivBytes
+  };
+  saltedContent = (await crypto.decrypt(algorithm, keyObjHex, gibbrishBytes));
+  saltedContent = new Uint8Array(saltedContent);
+  return unsaltContent(saltedContent);
+};
+
+export var symmetricEncryptHex = symmetricEncrypt;
+
+export var symmetricDecryptHex = symmetricDecrypt;
+
+//###########################################################
+// Byte Version
+export var symmetricEncryptBytes = async function(content, keyBytes) {
+  var aesKeyBytes, algorithm, gibbrishBytes, ivBytes, keyObjBytes, saltedContent;
+  ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
+  aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
+  saltedContent = saltContent(content);
+  keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
+  algorithm = {
+    name: "AES-CBC",
+    iv: ivBytes
+  };
+  gibbrishBytes = (await crypto.encrypt(algorithm, keyObjBytes, saltedContent));
+  return gibbrishBytes;
+};
+
+export var symmetricDecryptBytes = async function(gibbrishBytes, keyBytes) {
+  var aesKeyBytes, algorithm, ivBytes, keyObjBytes, saltedContent;
+  ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
+  aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
+  keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
+  algorithm = {
+    name: "AES-CBC",
+    iv: ivBytes
+  };
+  saltedContent = (await crypto.decrypt(algorithm, keyObjBytes, gibbrishBytes));
+  saltedContent = new Uint8Array(saltedContent);
+  return unsaltContent(saltedContent);
+};
+
+//endregion
+
+//###########################################################
+//region Unsalted symmetric encryption
+
+//###########################################################
+// Hex Version
+export var symmetricEncryptUnsalted = async function(content, keyHex) {
   var aesKeyHex, algorithm, contentBytes, gibbrishBytes, ivBytes, ivHex, keyObjHex;
   ivHex = keyHex.substring(0, 32);
   aesKeyHex = keyHex.substring(32, 96);
@@ -223,7 +295,7 @@ export var symmetricEncrypt = async function(content, keyHex) {
   return tbut.bytesToHex(gibbrishBytes);
 };
 
-export var symmetricDecrypt = async function(gibbrishHex, keyHex) {
+export var symmetricDecryptUnsalted = async function(gibbrishHex, keyHex) {
   var aesKeyHex, algorithm, contentBytes, gibbrishBytes, ivBytes, ivHex, keyObjHex;
   ivHex = keyHex.substring(0, 32);
   aesKeyHex = keyHex.substring(32, 96);
@@ -235,39 +307,6 @@ export var symmetricDecrypt = async function(gibbrishHex, keyHex) {
     iv: ivBytes
   };
   contentBytes = (await crypto.decrypt(algorithm, keyObjHex, gibbrishBytes));
-  return tbut.bytesToUtf8(contentBytes);
-};
-
-export var symmetricEncryptHex = symmetricEncrypt;
-
-export var symmetricDecryptHex = symmetricDecrypt;
-
-//###########################################################
-// Byte Version
-export var symmetricEncryptBytes = async function(content, keyBytes) {
-  var aesKeyBytes, algorithm, contentBytes, gibbrishBytes, ivBytes, keyObjBytes;
-  ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
-  aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
-  contentBytes = tbut.utf8ToBytes(content);
-  keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
-  algorithm = {
-    name: "AES-CBC",
-    iv: ivBytes
-  };
-  gibbrishBytes = (await crypto.encrypt(algorithm, keyObjBytes, contentBytes));
-  return gibbrishBytes;
-};
-
-export var symmetricDecryptBytes = async function(gibbrishBytes, keyBytes) {
-  var aesKeyBytes, algorithm, contentBytes, ivBytes, keyObjBytes;
-  ivBytes = new Uint8Array(keyBytes.buffer, 0, 16);
-  aesKeyBytes = new Uint8Array(keyBytes.buffer, 16, 32);
-  keyObjBytes = (await createKeyObjectBytes(aesKeyBytes));
-  algorithm = {
-    name: "AES-CBC",
-    iv: ivBytes
-  };
-  contentBytes = (await crypto.decrypt(algorithm, keyObjBytes, gibbrishBytes));
   return tbut.bytesToUtf8(contentBytes);
 };
 
@@ -611,7 +650,7 @@ export var saltContent = function(content) {
   var c, contentLength, end, fullLength, idx, j, len, overlap, padding, prefixLength, resultBytes, salt, saltLength, sizeRand, sum, unpaddedLength;
   content = tbut.utf8ToBytes(content);
   contentLength = content.length;
-  sizeRand = Uint8Array[1];
+  sizeRand = new Uint8Array(1);
   window.crypto.getRandomValues(sizeRand);
   saltLength = 33 + (sizeRand[0] & 127);
   salt = new Uint8Array(saltLength);

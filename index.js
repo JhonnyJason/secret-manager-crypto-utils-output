@@ -77,6 +77,9 @@ export var sha512Bytes = function(content) {
   return hasher.digest();
 };
 
+//###########################################################
+noble.etc.sha512Sync = sha512Bytes;
+
 //endregion
 
 //###########################################################
@@ -84,10 +87,10 @@ export var sha512Bytes = function(content) {
 
 //###########################################################
 // Hex Version
-export var createKeyPair = async function() {
+export var createKeyPair = function() {
   var publicKeyBytes, publicKeyHex, secretKeyBytes, secretKeyHex;
   secretKeyBytes = noble.utils.randomPrivateKey();
-  publicKeyBytes = (await noble.getPublicKey(secretKeyBytes));
+  publicKeyBytes = noble.getPublicKey(secretKeyBytes);
   secretKeyHex = tbut.bytesToHex(secretKeyBytes);
   publicKeyHex = tbut.bytesToHex(publicKeyBytes);
   return {secretKeyHex, publicKeyHex};
@@ -99,9 +102,9 @@ export var createSymKey = function() {
   return tbut.bytesToHex(keyAndIV);
 };
 
-export var createPublicKey = async function(secretKeyHex) {
+export var createPublicKey = function(secretKeyHex) {
   var publicKeyBytes;
-  publicKeyBytes = (await noble.getPublicKey(secretKeyHex));
+  publicKeyBytes = noble.getPublicKey(tbut.hexToBytes(secretKeyHex));
   return tbut.bytesToHex(publicKeyBytes);
 };
 
@@ -280,7 +283,7 @@ export var symmetricDecryptBytes = function(gibbrishBytes, keyBytes) {
 //endregion
 
 //###########################################################
-//region Unsalted symmetric encryption 
+//region Unsalted symmetric encryption
 
 //###########################################################
 // Hex Version
