@@ -456,136 +456,240 @@ export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
 // Hex Versions
 
 //###########################################################
-export var createSharedSecretHash = function(secretKeyHex, publicKeyHex, contextString = "") {
-  var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes, sharedSecretHex;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
-  nBytes = tbut.hexToBytes(secretKeyHex);
-  BBytes = tbut.hexToBytes(publicKeyHex);
-  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
+export var diffieHellmanSecretHash = function(secretKeyHex, publicKeyHex, contextString = "") {
+  var B, aBytes, b, cBytes, i, j, k, kB, kBBytes, kBigInt, len, len1, seedBytes, sharedSecretHex;
+  // a = our SecretKey
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // B = lG = target User Public Key
+  // kB = klG = shared Secret
+  aBytes = tbut.hexToBytes(secretKeyHex);
+  kBigInt = hashToScalar(sha512Bytes(aBytes));
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  
+  // A reference Point
+  kB = B.multiply(kBigInt);
+  kBBytes = kB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
-  seedBytes = Buffer.concat([nBBytes, cBytes]);
-  sharedSecretBytes = sha512Bytes(seedBytes);
+  seedBytes = new Uint8Array(kBBytes.length + cBytes.length);
+  for (i = j = 0, len = kBBytes.length; j < len; i = ++j) {
+    b = kBBytes[i];
+    seedBytes[i] = b;
+  }
+  for (i = k = 0, len1 = cBytes.length; k < len1; i = ++k) {
+    b = cBytes[i];
+    seedBytes[kBBytes.length + i] = b;
+  }
+  sharedSecretHex = sha512Hex(seedBytes);
+  return sharedSecretHex;
+};
+
+export var diffieHellmanSecretRaw = function(secretKeyHex, publicKeyHex) {
+  var B, aBytes, kB, kBigInt, sharedSecretBytes, sharedSecretHex;
+  // a = our SecretKey
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // B = lG = target User Public Key
+  // kB = klG = shared Secret
+  aBytes = tbut.hexToBytes(secretKeyHex);
+  kBigInt = hashToScalar(sha512Bytes(aBytes));
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  kB = B.multiply(kBigInt);
+  sharedSecretBytes = kB.toRawBytes();
   sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
   return sharedSecretHex;
 };
 
-export var createSharedSecretRaw = function(secretKeyHex, publicKeyHex) {
-  var BBytes, nBytes, sharedSecretBytes, sharedSecretHex;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
-  nBytes = tbut.hexToBytes(secretKeyHex);
-  BBytes = tbut.hexToBytes(publicKeyHex);
-  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
-  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
-  return sharedSecretHex;
-};
+export var diffieHellmanSecretHashHex = diffieHellmanSecretHash;
 
-export var createSharedSecretHashHex = createSharedSecretHash;
-
-export var createSharedSecretRawHex = createSharedSecretRaw;
+export var diffieHellmanSecretRawHex = diffieHellmanSecretRaw;
 
 //###########################################################
-export var referencedSharedSecretHash = async function(publicKeyHex, contextString = "") {
-  var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointHex, seedBytes, sharedSecretBytes, sharedSecretHex;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
+export var elGamalSecretHash = async function(publicKeyHex, contextString = "") {
+  var ABytes, B, b, cBytes, i, j, k, lB, lBBytes, lBigInt, len, len1, nBytes, referencePointHex, seedBytes, sharedSecretHex;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // G = basePoint
+  // B = kG = Public Key
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
+  // lB = lkG = shared secret
+  // key = sha512(lB)
+  // X = symmetricEncrypt(content, key)
+  // {A,X} = data for targt user
+
+  // n = one-time secret -> l
   nBytes = ed255.utils.randomPrivateKey();
-  BBytes = tbut.hexToBytes(publicKeyHex);
+  lBigInt = hashToScalar(sha512Bytes(nBytes));
+  
+  // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
-  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
+  // lB = lkG = shared Secret
+  lB = (await B.multiply(lBigInt));
+  lBBytes = lB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
-  seedBytes = Buffer.concat([nBBytes, cBytes]);
-  sharedSecretBytes = sha512Bytes(seedBytes);
-  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  seedBytes = new Uint8Array(lBBytes.length + cBytes.length);
+  for (i = j = 0, len = lBBytes.length; j < len; i = ++j) {
+    b = lBBytes[i];
+    seedBytes[i] = b;
+  }
+  for (i = k = 0, len1 = cBytes.length; k < len1; i = ++k) {
+    b = cBytes[i];
+    seedBytes[lBBytes.length + i] = b;
+  }
+  sharedSecretHex = sha512Hex(seedBytes);
   referencePointHex = tbut.bytesToHex(ABytes);
   return {referencePointHex, sharedSecretHex};
 };
 
-export var referencedSharedSecretRaw = async function(publicKeyHex) {
-  var ABytes, BBytes, nBytes, referencePointHex, sharedSecretBytes, sharedSecretHex;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
+export var elGamalSecretRaw = async function(publicKeyHex) {
+  var ABytes, B, lB, lBBytes, lBigInt, nBytes, referencePointHex, sharedSecretHex;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // G = basePoint
+  // B = kG = Public Key
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
+  // lB = lkG = shared secret
+  // key = sha512(lB)
+  // X = symmetricEncrypt(content, key)
+  // {A,X} = data for targt user
+
+  // n = one-time secret -> l
   nBytes = ed255.utils.randomPrivateKey();
-  BBytes = tbut.hexToBytes(publicKeyHex);
+  lBigInt = hashToScalar(sha512Bytes(nBytes));
+  
+  // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
-  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
-  sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
+  // lB = lkG = shared Secret
+  lB = (await B.multiply(lBigInt));
+  lBBytes = lB.toRawBytes();
+  sharedSecretHex = tbut.bytesToHex(lBBytes);
   referencePointHex = tbut.bytesToHex(ABytes);
   return {referencePointHex, sharedSecretHex};
 };
 
-export var referencedSharedSecretHashHex = referencedSharedSecretHash;
+export var elGamalSecretHashHex = elGamalSecretHash;
 
-export var referencedSharedSecretRawHex = referencedSharedSecretRaw;
+export var elGamalSecretRawHex = elGamalSecretRaw;
 
 //###########################################################
 // Bytes Versions
 
 //###########################################################
-export var createSharedSecretHashBytes = function(secretKeyBytes, publicKeyBytes, contextString = "") {
-  var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
-  nBytes = secretKeyBytes;
-  BBytes = publicKeyBytes;
-  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
+export var diffieHellmanSecretHashBytes = async function(secretKeyBytes, publicKeyBytes, contextString = "") {
+  var B, BHex, b, cBytes, i, j, k, kB, kBBytes, kBigInt, len, len1, seedBytes, sharedSecretBytes;
+  // a = our SecretKey
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // B = lG = target User Public Key
+  // kB = klG = shared Secret
+  BHex = tbut.bytesToHex(publicKeyBytes);
+  B = ed255.ExtendedPoint.fromHex(BHex);
+  // k 
+  kBigInt = hashToScalar(sha512Bytes(secretKeyBytes));
+  // kB = klG = shared Secret
+  kB = (await B.multiply(kBigInt));
+  kBBytes = kB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
-  seedBytes = Buffer.concat([nBBytes, cBytes]);
+  seedBytes = new Uint8Array(kBBytes.length + cBytes.length);
+  for (i = j = 0, len = kBBytes.length; j < len; i = ++j) {
+    b = kBBytes[i];
+    seedBytes[i] = b;
+  }
+  for (i = k = 0, len1 = cBytes.length; k < len1; i = ++k) {
+    b = cBytes[i];
+    seedBytes[kBBytes.length + i] = b;
+  }
   sharedSecretBytes = sha512Bytes(seedBytes);
   return sharedSecretBytes;
 };
 
-export var createSharedSecretRawBytes = function(secretKeyBytes, publicKeyBytes) {
-  var BBytes, nBytes, sharedSecretBytes;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
-  nBytes = secretKeyBytes;
-  BBytes = publicKeyBytes;
-  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
-  return sharedSecretBytes;
+export var diffieHellmanSecretRawBytes = async function(secretKeyBytes, publicKeyBytes) {
+  var B, BHex, kB, kBBytes, kBigInt;
+  // a = our SecretKey
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // B = lG = target User Public Key
+  // kB = klG = shared Secret
+  BHex = tbut.bytesToHex(publicKeyBytes);
+  B = ed255.ExtendedPoint.fromHex(BHex);
+  // k 
+  kBigInt = hashToScalar(sha512Bytes(secretKeyBytes));
+  // kB = klG = shared Secret
+  kB = (await B.multiply(kBigInt));
+  kBBytes = kB.toRawBytes();
+  return kBBytes;
 };
 
 //###########################################################
-export var referencedSharedSecretHashBytes = async function(publicKeyBytes, contextString = "") {
-  var ABytes, BBytes, cBytes, nBBytes, nBytes, referencePointBytes, seedBytes, sharedSecretBytes;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
+export var elGamalSecretHashBytes = async function(publicKeyBytes, contextString = "") {
+  var ABytes, B, BHex, b, cBytes, i, j, k, lB, lBBytes, lBigInt, len, len1, nBytes, referencePointBytes, seedBytes, sharedSecretBytes;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // G = basePoint
+  // B = kG = Public Key
+  BHex = tbut.bytesToHex(publicKeyBytes);
+  B = ed255.ExtendedPoint.fromHex(BHex);
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
+  // lB = lkG = shared secret
+  // key = sha512(lB)
+  // X = symmetricEncrypt(content, key)
+  // {A,X} = data for targt user
+
+  // n = one-time secret -> l
   nBytes = ed255.utils.randomPrivateKey();
-  BBytes = publicKeyBytes;
+  lBigInt = hashToScalar(sha512Bytes(nBytes));
+  
+  // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
-  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
+  // lB = lkG = shared Secret
+  lB = (await B.multiply(lBigInt));
+  lBBytes = lB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
-  seedBytes = Buffer.concat([nBBytes, cBytes]);
+  seedBytes = new Uint8Array(lBBytes.length + cBytes.length);
+  for (i = j = 0, len = lBBytes.length; j < len; i = ++j) {
+    b = lBBytes[i];
+    seedBytes[i] = b;
+  }
+  for (i = k = 0, len1 = cBytes.length; k < len1; i = ++k) {
+    b = cBytes[i];
+    seedBytes[lBBytes.length + i] = b;
+  }
   sharedSecretBytes = sha512Bytes(seedBytes);
   referencePointBytes = ABytes;
   return {referencePointBytes, sharedSecretBytes};
 };
 
-export var referencedSharedSecretRawBytes = async function(publicKeyBytes) {
-  var ABytes, BBytes, nBytes, referencePointBytes, sharedSecretBytes;
-  // n = SecretKey
-  // A = referencePoint = nG
-  // B = publicKey = lG
-  // nB = shared Secret = nlG
+export var elGamalSecretRawBytes = async function(publicKeyBytes) {
+  var ABytes, B, BHex, lB, lBBytes, lBigInt, nBytes, referencePointBytes, sharedSecretBytes;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // G = basePoint
+  // B = kG = Public Key
+  BHex = tbut.bytesToHex(publicKeyBytes);
+  B = ed255.ExtendedPoint.fromHex(BHex);
+  
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
+  // lB = lkG = shared secret
+  // key = sha512(lB)
+  // X = symmetricEncrypt(content, key)
+  // {A,X} = data for targt user
+
+  // n = one-time secret -> l
   nBytes = ed255.utils.randomPrivateKey();
-  BBytes = publicKeyBytes;
+  lBigInt = hashToScalar(sha512Bytes(nBytes));
+  
+  // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
-  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
+  // lB = lkG = shared Secret
+  lB = (await B.multiply(lBigInt));
+  lBBytes = lB.toRawBytes();
+  sharedSecretBytes = lBBytes;
   referencePointBytes = ABytes;
   return {referencePointBytes, sharedSecretBytes};
 };
