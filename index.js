@@ -2,7 +2,7 @@
 //###########################################################
 var ORDER, encAlgo, hashToScalar, mod;
 
-import * as noble from "@noble/ed25519";
+import * as ed255 from "@noble/ed25519";
 
 import * as tbut from "thingy-byte-utils";
 
@@ -11,7 +11,7 @@ import crypto from "crypto";
 //###########################################################
 encAlgo = 'aes-256-cbc';
 
-// authAlgo = 'aes-256-gcm'
+//###########################################################
 ORDER = BigInt(2) ** BigInt(252) + BigInt('27742317777372353535851937790883648493');
 
 //###########################################################
@@ -77,9 +77,6 @@ export var sha512Bytes = function(content) {
   return hasher.digest();
 };
 
-//###########################################################
-noble.etc.sha512Sync = sha512Bytes;
-
 //endregion
 
 //###########################################################
@@ -87,10 +84,10 @@ noble.etc.sha512Sync = sha512Bytes;
 
 //###########################################################
 // Hex Version
-export var createKeyPair = function() {
+export var createKeyPair = async function() {
   var publicKeyBytes, publicKeyHex, secretKeyBytes, secretKeyHex;
-  secretKeyBytes = noble.utils.randomPrivateKey();
-  publicKeyBytes = noble.getPublicKey(secretKeyBytes);
+  secretKeyBytes = ed255.utils.randomPrivateKey();
+  publicKeyBytes = (await ed255.getPublicKeyAsync(secretKeyBytes));
   secretKeyHex = tbut.bytesToHex(secretKeyBytes);
   publicKeyHex = tbut.bytesToHex(publicKeyBytes);
   return {secretKeyHex, publicKeyHex};
@@ -102,9 +99,9 @@ export var createSymKey = function() {
   return tbut.bytesToHex(keyAndIV);
 };
 
-export var createPublicKey = function(secretKeyHex) {
+export var createPublicKey = async function(secretKeyHex) {
   var publicKeyBytes;
-  publicKeyBytes = noble.getPublicKey(tbut.hexToBytes(secretKeyHex));
+  publicKeyBytes = (await ed255.getPublicKeyAsync(tbut.hexToBytes(secretKeyHex)));
   return tbut.bytesToHex(publicKeyBytes);
 };
 
@@ -118,17 +115,17 @@ export var createPublicKeyHex = createPublicKey;
 // Byte Version
 export var createKeyPairBytes = async function() {
   var publicKeyBytes, secretKeyBytes;
-  secretKeyBytes = noble.utils.randomPrivateKey();
-  publicKeyBytes = (await noble.getPublicKey(secretKeyBytes));
+  secretKeyBytes = ed255.utils.randomPrivateKey();
+  publicKeyBytes = (await ed255.getPublicKeyAsync(secretKeyBytes));
   return {secretKeyBytes, publicKeyBytes};
 };
 
 export var createSymKeyBytes = function() {
-  return new Uint8Array((crypto.randomBytes(48)).buffer);
+  return new Uint8Array(crypto.randomBytes(48));
 };
 
 export var createPublicKeyBytes = async function(secretKeyBytes) {
-  return (await noble.getPublicKey(secretKeyBytes));
+  return (await ed255.getPublicKeyAsync(secretKeyBytes));
 };
 
 //endregion
@@ -141,14 +138,14 @@ export var createPublicKeyBytes = async function(secretKeyBytes) {
 export var createSignature = async function(content, signingKeyHex) {
   var hashHex, signature;
   hashHex = sha256Hex(content);
-  signature = (await noble.sign(hashHex, signingKeyHex));
+  signature = (await ed255.signAsync(hashHex, signingKeyHex));
   return tbut.bytesToHex(signature);
 };
 
 export var verify = async function(sigHex, keyHex, content) {
   var hashHex;
   hashHex = sha256Hex(content);
-  return (await noble.verify(sigHex, hashHex, keyHex));
+  return (await ed255.verifyAsync(sigHex, hashHex, keyHex));
 };
 
 export var createSignatureHex = createSignature;
@@ -161,13 +158,13 @@ export var verifyHex = verify;
 export var createSignatureBytes = async function(content, signingKeyBytes) {
   var hashBytes;
   hashBytes = sha256Bytes(content);
-  return (await noble.sign(hashBytes, signingKeyBytes));
+  return (await ed255.signAsync(hashBytes, signingKeyBytes));
 };
 
 export var verifyBytes = async function(sigBytes, keyBytes, content) {
   var hashBytes;
   hashBytes = sha256Bytes(content);
-  return (await noble.verify(sigBytes, hashBytes, keyBytes));
+  return (await ed255.verifyAsync(sigBytes, hashBytes, keyBytes));
 };
 
 //endregion
@@ -330,43 +327,40 @@ export var symmetricDecryptUnsalted = function(gibbrishHex, keyHex) {
 
 //###########################################################
 // Hex Version
-
-//###########################################################
-export var asymmetricEncryptOld = async function(content, publicKeyHex) {
-  var ABytes, B, BHex, encryptedContentHex, gibbrish, lB, lBigInt, nBytes, nHex, referencePointHex, symkey;
-  // a = Secret Key
-  // k = sha512(a) -> hashToScalar
+export var asymmetricEncrypt = async function(content, publicKeyHex) {
+  var ABytes, B, encryptedContentHex, gibbrishHex, lB, lBigInt, nBytes, referencePointHex, symkeyHex;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
   // G = basePoint
   // B = kG = Public Key
-  B = noble.Point.fromHex(publicKeyHex);
-  BHex = publicKeyHex;
-  // console.log "BHex: " + BHex
-
-  // n = new one-time secret (generated on sever and forgotten about)
-  // l = sha512(n) -> hashToScalar
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
   // lB = lkG = shared secret
-  // key = sha512(lBHex)
+  // key = sha512(lB)
   // X = symmetricEncrypt(content, key)
-  // A = lG = one time public reference point
-  // {A,X} = data to be stored for B
+  // {A,X} = data for targt user
 
-  // n = one-time secret
-  nBytes = noble.utils.randomPrivateKey();
-  nHex = tbut.bytesToHex(nBytes);
+  // n = one-time secret -> l
+  nBytes = ed255.utils.randomPrivateKey();
   lBigInt = hashToScalar(sha512Bytes(nBytes));
   
-  //A one time public key = reference Point
-  ABytes = (await noble.getPublicKey(nHex));
+  // A reference Point
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  // lB = lkG = shared Secret
   lB = (await B.multiply(lBigInt));
-  symkey = sha512Hex(lB.toHex());
-  gibbrish = symmetricEncryptHex(content, symkey);
+  
+  // encrypt with symmetricEncryptHex
+  symkeyHex = sha512Hex(lB.toRawBytes());
+  gibbrishHex = symmetricEncryptHex(content, symkeyHex);
   referencePointHex = tbut.bytesToHex(ABytes);
-  encryptedContentHex = gibbrish;
+  encryptedContentHex = gibbrishHex;
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymmetricDecryptOld = async function(secrets, secretKeyHex) {
-  var A, AHex, aBytes, content, gibbrishHex, kA, kBigInt, symkey;
+export var asymmetricDecrypt = async function(secrets, secretKeyHex) {
+  var A, AHex, aBytes, content, gibbrishHex, kA, kBigInt, symkeyHex;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
   if ((AHex == null) || (gibbrishHex == null)) {
@@ -384,39 +378,10 @@ export var asymmetricDecryptOld = async function(secrets, secretKeyHex) {
   // klG = lB = kA = shared secret
   // key = sha512(kAHex)
   // content = symmetricDecrypt(X, key)
-  A = noble.Point.fromHex(AHex);
+  A = ed255.ExtendedPoint.fromHex(AHex);
   kA = (await A.multiply(kBigInt));
-  symkey = sha512Hex(kA.toHex());
-  content = symmetricDecryptHex(gibbrishHex, symkey);
-  return content;
-};
-
-//###########################################################
-export var asymmetricEncrypt = async function(content, publicKeyHex) {
-  var A, encryptedContentHex, gibbrish, lB, nBytes, referencePointHex, symkey;
-  nBytes = noble.utils.randomPrivateKey();
-  A = (await noble.getPublicKey(nBytes));
-  lB = (await noble.getSharedSecret(nBytes, publicKeyHex));
-  symkey = sha512Bytes(lB);
-  // symkey = sha512Bytes(tbut.bytesToHex(lB))
-  gibbrish = symmetricEncryptBytes(content, symkey);
-  referencePointHex = tbut.bytesToHex(A);
-  encryptedContentHex = tbut.bytesToHex(gibbrish);
-  return {referencePointHex, encryptedContentHex};
-};
-
-export var asymmetricDecrypt = async function(secrets, secretKeyHex) {
-  var AHex, content, gibbrishBytes, gibbrishHex, kA, symkey;
-  AHex = secrets.referencePointHex || secrets.referencePoint;
-  gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
-  if ((AHex == null) || (gibbrishHex == null)) {
-    throw new Error("Invalid secrets Object!");
-  }
-  kA = (await noble.getSharedSecret(secretKeyHex, AHex));
-  symkey = sha512Bytes(kA);
-  // symkey = sha512Bytes(tbut.bytesToHex(kA))
-  gibbrishBytes = tbut.hexToBytes(gibbrishHex);
-  content = symmetricDecryptBytes(gibbrishBytes, symkey);
+  symkeyHex = sha512Hex(kA.toRawBytes());
+  content = symmetricDecryptHex(gibbrishHex, symkeyHex);
   return content;
 };
 
@@ -427,11 +392,30 @@ export var asymmetricDecryptHex = asymmetricDecrypt;
 //###########################################################
 // Byte Version
 export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
-  var ABytes, encryptedContentBytes, gibbrishBytes, lB, nBytes, referencePointBytes, symkeyBytes;
-  nBytes = noble.utils.randomPrivateKey();
-  ABytes = (await noble.getPublicKey(nBytes));
-  lB = (await noble.getSharedSecret(nBytes, publicKeyBytes));
-  symkeyBytes = sha512Bytes(lB);
+  var ABytes, B, encryptedContentBytes, gibbrishBytes, lB, lBigInt, nBytes, publicKeyHex, referencePointBytes, symkeyBytes;
+  // a = Secret Key of target user
+  // k = sha512(a) -> hashToScalar (scalar for multiplication)
+  // G = basePoint
+  // B = kG = Public Key
+  publicKeyHex = tbut.bytesToHex(publicKeyBytes);
+  B = ed255.ExtendedPoint.fromHex(publicKeyHex);
+  
+  // n = new one-time secret (generated forgotten about)
+  // l = sha512(n) -> hashToScalar (scalar for multiplication)
+  // A = lG = one time public key = reference point
+  // lB = lkG = shared secret
+  // key = sha512(lB)
+  // X = symmetricEncrypt(content, key)
+  // {A,X} = data for targt user
+
+  // n = one-time secret -> l
+  nBytes = ed255.utils.randomPrivateKey();
+  lBigInt = hashToScalar(sha512Bytes(nBytes));
+  // A reference Point
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  // lB = lkG = shared Secret
+  lB = (await B.multiply(lBigInt));
+  symkeyBytes = sha512Bytes(lB.toRawBytes());
   gibbrishBytes = symmetricEncryptBytes(content, symkeyBytes);
   referencePointBytes = ABytes;
   encryptedContentBytes = gibbrishBytes;
@@ -439,14 +423,26 @@ export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
 };
 
 export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
-  var ABytes, content, gibbrishBytes, kABytes, symkeyBytes;
+  var A, ABytes, AHex, content, gibbrishBytes, kA, kBigInt, symkeyBytes;
   ABytes = secrets.referencePointBytes || secrets.referencePoint;
   gibbrishBytes = secrets.encryptedContentBytes || secrets.encryptedContent;
   if ((ABytes == null) || (gibbrishBytes == null)) {
     throw new Error("Invalid secrets Object!");
   }
-  kABytes = (await noble.getSharedSecret(secretKeyBytes, ABytes));
-  symkeyBytes = sha512Bytes(kABytes);
+  // a = Secret Key
+  // k = sha512(a) -> hashToScalar
+  // G = basePoint
+  // B = kG = Public Key
+  kBigInt = hashToScalar(sha512Bytes(secretKeyBytes));
+  // {A,X} = secrets
+  // A = lG = one time public reference point 
+  // klG = lB = kA = shared secret
+  // key = sha512(kAHex)
+  // content = symmetricDecrypt(X, key)
+  AHex = tbut.bytesToHex(ABytes);
+  A = ed255.ExtendedPoint.fromHex(AHex);
+  kA = (await A.multiply(kBigInt));
+  symkeyBytes = sha512Bytes(kA.toRawBytes());
   content = symmetricDecryptBytes(gibbrishBytes, symkeyBytes);
   return content;
 };
@@ -460,7 +456,7 @@ export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
 // Hex Versions
 
 //###########################################################
-export var createSharedSecretHash = async function(secretKeyHex, publicKeyHex, contextString = "") {
+export var createSharedSecretHash = function(secretKeyHex, publicKeyHex, contextString = "") {
   var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes, sharedSecretHex;
   // n = SecretKey
   // A = referencePoint = nG
@@ -468,7 +464,7 @@ export var createSharedSecretHash = async function(secretKeyHex, publicKeyHex, c
   // nB = shared Secret = nlG
   nBytes = tbut.hexToBytes(secretKeyHex);
   BBytes = tbut.hexToBytes(publicKeyHex);
-  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = Buffer.concat([nBBytes, cBytes]);
   sharedSecretBytes = sha512Bytes(seedBytes);
@@ -476,7 +472,7 @@ export var createSharedSecretHash = async function(secretKeyHex, publicKeyHex, c
   return sharedSecretHex;
 };
 
-export var createSharedSecretRaw = async function(secretKeyHex, publicKeyHex) {
+export var createSharedSecretRaw = function(secretKeyHex, publicKeyHex) {
   var BBytes, nBytes, sharedSecretBytes, sharedSecretHex;
   // n = SecretKey
   // A = referencePoint = nG
@@ -484,7 +480,7 @@ export var createSharedSecretRaw = async function(secretKeyHex, publicKeyHex) {
   // nB = shared Secret = nlG
   nBytes = tbut.hexToBytes(secretKeyHex);
   BBytes = tbut.hexToBytes(publicKeyHex);
-  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
   sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
   return sharedSecretHex;
 };
@@ -500,10 +496,10 @@ export var referencedSharedSecretHash = async function(publicKeyHex, contextStri
   // A = referencePoint = nG
   // B = publicKey = lG
   // nB = shared Secret = nlG
-  nBytes = noble.utils.randomPrivateKey();
+  nBytes = ed255.utils.randomPrivateKey();
   BBytes = tbut.hexToBytes(publicKeyHex);
-  ABytes = (await noble.getPublicKey(nBytes));
-  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = Buffer.concat([nBBytes, cBytes]);
   sharedSecretBytes = sha512Bytes(seedBytes);
@@ -518,10 +514,10 @@ export var referencedSharedSecretRaw = async function(publicKeyHex) {
   // A = referencePoint = nG
   // B = publicKey = lG
   // nB = shared Secret = nlG
-  nBytes = noble.utils.randomPrivateKey();
+  nBytes = ed255.utils.randomPrivateKey();
   BBytes = tbut.hexToBytes(publicKeyHex);
-  ABytes = (await noble.getPublicKey(nBytes));
-  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
   sharedSecretHex = tbut.bytesToHex(sharedSecretBytes);
   referencePointHex = tbut.bytesToHex(ABytes);
   return {referencePointHex, sharedSecretHex};
@@ -535,7 +531,7 @@ export var referencedSharedSecretRawHex = referencedSharedSecretRaw;
 // Bytes Versions
 
 //###########################################################
-export var createSharedSecretHashBytes = async function(secretKeyBytes, publicKeyBytes, contextString = "") {
+export var createSharedSecretHashBytes = function(secretKeyBytes, publicKeyBytes, contextString = "") {
   var BBytes, cBytes, nBBytes, nBytes, seedBytes, sharedSecretBytes;
   // n = SecretKey
   // A = referencePoint = nG
@@ -543,14 +539,14 @@ export var createSharedSecretHashBytes = async function(secretKeyBytes, publicKe
   // nB = shared Secret = nlG
   nBytes = secretKeyBytes;
   BBytes = publicKeyBytes;
-  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = Buffer.concat([nBBytes, cBytes]);
   sharedSecretBytes = sha512Bytes(seedBytes);
   return sharedSecretBytes;
 };
 
-export var createSharedSecretRawBytes = async function(secretKeyBytes, publicKeyBytes) {
+export var createSharedSecretRawBytes = function(secretKeyBytes, publicKeyBytes) {
   var BBytes, nBytes, sharedSecretBytes;
   // n = SecretKey
   // A = referencePoint = nG
@@ -558,7 +554,7 @@ export var createSharedSecretRawBytes = async function(secretKeyBytes, publicKey
   // nB = shared Secret = nlG
   nBytes = secretKeyBytes;
   BBytes = publicKeyBytes;
-  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
   return sharedSecretBytes;
 };
 
@@ -569,10 +565,10 @@ export var referencedSharedSecretHashBytes = async function(publicKeyBytes, cont
   // A = referencePoint = nG
   // B = publicKey = lG
   // nB = shared Secret = nlG
-  nBytes = noble.utils.randomPrivateKey();
+  nBytes = ed255.utils.randomPrivateKey();
   BBytes = publicKeyBytes;
-  ABytes = (await noble.getPublicKey(nBytes));
-  nBBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  nBBytes = ed255.getSharedSecret(nBytes, BBytes);
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = Buffer.concat([nBBytes, cBytes]);
   sharedSecretBytes = sha512Bytes(seedBytes);
@@ -586,10 +582,10 @@ export var referencedSharedSecretRawBytes = async function(publicKeyBytes) {
   // A = referencePoint = nG
   // B = publicKey = lG
   // nB = shared Secret = nlG
-  nBytes = noble.utils.randomPrivateKey();
+  nBytes = ed255.utils.randomPrivateKey();
   BBytes = publicKeyBytes;
-  ABytes = (await noble.getPublicKey(nBytes));
-  sharedSecretBytes = (await noble.getSharedSecret(nBytes, BBytes));
+  ABytes = (await ed255.getPublicKeyAsync(nBytes));
+  sharedSecretBytes = ed255.getSharedSecret(nBytes, BBytes);
   referencePointBytes = ABytes;
   return {referencePointBytes, sharedSecretBytes};
 };
@@ -598,32 +594,6 @@ export var referencedSharedSecretRawBytes = async function(publicKeyBytes) {
 
 //###########################################################
 //region salts
-export var createRandomLengthSalt = function() {
-  var byte, bytes, i, j, len;
-  while (true) {
-    bytes = crypto.randomBytes(512);
-    for (i = j = 0, len = bytes.length; j < len; i = ++j) {
-      byte = bytes[i];
-      if (byte === 0) {
-        return bytes.slice(0, i + 1).toString("utf8");
-      }
-    }
-  }
-};
-
-export var removeSalt = function(content) {
-  var char, i, j, len;
-  for (i = j = 0, len = content.length; j < len; i = ++j) {
-    char = content[i];
-    if (char === "\0") {
-      return content.slice(i + 1);
-    }
-  }
-  throw new Error("No Salt termination found!");
-};
-
-
-//###########################################################
 export var saltContent = function(content) {
   var c, contentLength, end, fullLength, idx, j, len, overlap, padding, prefixLength, resultBuffer, salt, saltLength, sum, unpaddedLength;
   content = tbut.utf8ToBytes(content);
