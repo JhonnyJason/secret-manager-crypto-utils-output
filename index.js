@@ -143,9 +143,6 @@ export var createSignature = async function(content, signingKeyHex) {
   return tbut.bytesToHex(signature);
 };
 
-// contentBytes = tbut.utf8ToBytes(content)
-// signature = await ed255.signAsync(contentBytes, signingKeyHex)
-// return tbut.bytesToHex(signature)
 export var verify = async function(sigHex, keyHex, content) {
   var contentBytes, keyBytes, sigBytes;
   sigBytes = tbut.hexToBytes(sigHex);
@@ -154,8 +151,6 @@ export var verify = async function(sigHex, keyHex, content) {
   return (await ed255.verifyAsync(sigBytes, contentBytes, keyBytes));
 };
 
-// contentBytes = tbut.utf8ToBytes(content)
-// return await ed255.verifyAsync(sigHex, contentBytes, keyHex)
 export var createSignatureHex = createSignature;
 
 export var verifyHex = verify;
@@ -260,8 +255,6 @@ export var symmetricEncryptBytes = function(content, keyBytes) {
   return allGibbrish;
 };
 
-// allGibbrish = Buffer.concat([gibbrish,gibbrishFinal])
-// return new Uint8Array(allGibbrish)
 export var symmetricDecryptBytes = function(gibbrishBytes, keyBytes) {
   var aesKeyBuffer, allSaltedContent, b, decipher, finalContent, i, ivBuffer, j, k, len, len1, saltedContent;
   ivBuffer = Buffer.from(keyBytes.buffer, 0, 16);
@@ -284,49 +277,6 @@ export var symmetricDecryptBytes = function(gibbrishBytes, keyBytes) {
   return unsaltContent(allSaltedContent);
 };
 
-
-//endregion
-
-//###########################################################
-//region Unsalted symmetric encryption
-
-//###########################################################
-// Hex Version
-export var symmetricEncryptUnsalted = function(content, keyHex) {
-  var aesKeyBuffer, aesKeyHex, cipher, gibbrish, ivBuffer, ivHex;
-  ivHex = keyHex.substring(0, 32);
-  ivBuffer = Buffer.from(ivHex, "hex");
-  aesKeyHex = keyHex.substring(32, 96);
-  aesKeyBuffer = Buffer.from(aesKeyHex, "hex");
-  // console.log "- - ivHex: "
-  // console.log ivHex
-  // console.log ivHex.length
-  // console.log "- - aesKeyHex: "
-  // console.log aesKeyHex
-  // console.log aesKeyHex.length
-  cipher = crypto.createCipheriv(encAlgo, aesKeyBuffer, ivBuffer);
-  gibbrish = cipher.update(content, 'utf8', 'hex');
-  gibbrish += cipher.final('hex');
-  return gibbrish;
-};
-
-export var symmetricDecryptUnsalted = function(gibbrishHex, keyHex) {
-  var aesKeyBuffer, aesKeyHex, content, decipher, ivBuffer, ivHex;
-  ivHex = keyHex.substring(0, 32);
-  ivBuffer = Buffer.from(ivHex, "hex");
-  aesKeyHex = keyHex.substring(32, 96);
-  aesKeyBuffer = Buffer.from(aesKeyHex, "hex");
-  // console.log "- - ivHex: "
-  // console.log ivHex
-  // console.log ivHex.length
-  // console.log "- - aesKeyHex: "
-  // console.log aesKeyHex
-  // console.log aesKeyHex.length
-  decipher = crypto.createDecipheriv(encAlgo, aesKeyBuffer, ivBuffer);
-  content = decipher.update(gibbrishHex, 'hex', 'utf8');
-  content += decipher.final('utf8');
-  return content;
-};
 
 //endregion
 
@@ -357,7 +307,7 @@ export var asymmetricEncrypt = async function(content, publicKeyHex) {
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   
   // encrypt with symmetricEncryptHex
   symkeyHex = sha512Hex(lB.toRawBytes());
@@ -367,7 +317,7 @@ export var asymmetricEncrypt = async function(content, publicKeyHex) {
   return {referencePointHex, encryptedContentHex};
 };
 
-export var asymmetricDecrypt = async function(secrets, secretKeyHex) {
+export var asymmetricDecrypt = function(secrets, secretKeyHex) {
   var A, AHex, aBytes, content, gibbrishHex, kA, kBigInt, symkeyHex;
   AHex = secrets.referencePointHex || secrets.referencePoint;
   gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent;
@@ -387,7 +337,7 @@ export var asymmetricDecrypt = async function(secrets, secretKeyHex) {
   // key = sha512(kAHex)
   // content = symmetricDecrypt(X, key)
   A = ed255.ExtendedPoint.fromHex(AHex);
-  kA = (await A.multiply(kBigInt));
+  kA = A.multiply(kBigInt);
   symkeyHex = sha512Hex(kA.toRawBytes());
   content = symmetricDecryptHex(gibbrishHex, symkeyHex);
   return content;
@@ -422,7 +372,7 @@ export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   symkeyBytes = sha512Bytes(lB.toRawBytes());
   gibbrishBytes = symmetricEncryptBytes(content, symkeyBytes);
   referencePointBytes = ABytes;
@@ -430,7 +380,7 @@ export var asymmetricEncryptBytes = async function(content, publicKeyBytes) {
   return {referencePointBytes, encryptedContentBytes};
 };
 
-export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
+export var asymmetricDecryptBytes = function(secrets, secretKeyBytes) {
   var A, ABytes, AHex, content, gibbrishBytes, kA, kBigInt, symkeyBytes;
   ABytes = secrets.referencePointBytes || secrets.referencePoint;
   gibbrishBytes = secrets.encryptedContentBytes || secrets.encryptedContent;
@@ -449,7 +399,7 @@ export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
   // content = symmetricDecrypt(X, key)
   AHex = tbut.bytesToHex(ABytes);
   A = ed255.ExtendedPoint.fromHex(AHex);
-  kA = (await A.multiply(kBigInt));
+  kA = A.multiply(kBigInt);
   symkeyBytes = sha512Bytes(kA.toRawBytes());
   content = symmetricDecryptBytes(gibbrishBytes, symkeyBytes);
   return content;
@@ -458,7 +408,7 @@ export var asymmetricDecryptBytes = async function(secrets, secretKeyBytes) {
 //endregion
 
 //###########################################################
-//region referenced/shared secrets
+//region deffieHellman/ElGamal secrets
 
 //###########################################################
 // Hex Versions
@@ -533,7 +483,7 @@ export var elGamalSecretHash = async function(publicKeyHex, contextString = "") 
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   lBBytes = lB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = new Uint8Array(lBBytes.length + cBytes.length);
@@ -572,7 +522,7 @@ export var elGamalSecretRaw = async function(publicKeyHex) {
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   lBBytes = lB.toRawBytes();
   sharedSecretHex = tbut.bytesToHex(lBBytes);
   referencePointHex = tbut.bytesToHex(ABytes);
@@ -587,7 +537,7 @@ export var elGamalSecretRawHex = elGamalSecretRaw;
 // Bytes Versions
 
 //###########################################################
-export var diffieHellmanSecretHashBytes = async function(secretKeyBytes, publicKeyBytes, contextString = "") {
+export var diffieHellmanSecretHashBytes = function(secretKeyBytes, publicKeyBytes, contextString = "") {
   var B, BHex, b, cBytes, i, j, k, kB, kBBytes, kBigInt, len, len1, seedBytes, sharedSecretBytes;
   // a = our SecretKey
   // k = sha512(a) -> hashToScalar (scalar for multiplication)
@@ -598,7 +548,7 @@ export var diffieHellmanSecretHashBytes = async function(secretKeyBytes, publicK
   // k 
   kBigInt = hashToScalar(sha512Bytes(secretKeyBytes));
   // kB = klG = shared Secret
-  kB = (await B.multiply(kBigInt));
+  kB = B.multiply(kBigInt);
   kBBytes = kB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = new Uint8Array(kBBytes.length + cBytes.length);
@@ -614,7 +564,7 @@ export var diffieHellmanSecretHashBytes = async function(secretKeyBytes, publicK
   return sharedSecretBytes;
 };
 
-export var diffieHellmanSecretRawBytes = async function(secretKeyBytes, publicKeyBytes) {
+export var diffieHellmanSecretRawBytes = function(secretKeyBytes, publicKeyBytes) {
   var B, BHex, kB, kBBytes, kBigInt;
   // a = our SecretKey
   // k = sha512(a) -> hashToScalar (scalar for multiplication)
@@ -625,7 +575,7 @@ export var diffieHellmanSecretRawBytes = async function(secretKeyBytes, publicKe
   // k 
   kBigInt = hashToScalar(sha512Bytes(secretKeyBytes));
   // kB = klG = shared Secret
-  kB = (await B.multiply(kBigInt));
+  kB = B.multiply(kBigInt);
   kBBytes = kB.toRawBytes();
   return kBBytes;
 };
@@ -654,7 +604,7 @@ export var elGamalSecretHashBytes = async function(publicKeyBytes, contextString
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   lBBytes = lB.toRawBytes();
   cBytes = tbut.utf8ToBytes(contextString);
   seedBytes = new Uint8Array(lBBytes.length + cBytes.length);
@@ -695,7 +645,7 @@ export var elGamalSecretRawBytes = async function(publicKeyBytes) {
   // A reference Point
   ABytes = (await ed255.getPublicKeyAsync(nBytes));
   // lB = lkG = shared Secret
-  lB = (await B.multiply(lBigInt));
+  lB = B.multiply(lBigInt);
   lBBytes = lB.toRawBytes();
   sharedSecretBytes = lBBytes;
   referencePointBytes = ABytes;
