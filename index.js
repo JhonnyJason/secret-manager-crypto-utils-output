@@ -136,18 +136,26 @@ export var createPublicKeyBytes = async function(secretKeyBytes) {
 //###########################################################
 // Hex Version
 export var createSignature = async function(content, signingKeyHex) {
-  var hashHex, signature;
-  hashHex = sha256Hex(content);
-  signature = (await ed255.signAsync(hashHex, signingKeyHex));
+  var contentBytes, signature, signingKeyBytes;
+  contentBytes = tbut.utf8ToBytes(content);
+  signingKeyBytes = tbut.hexToBytes(signingKeyHex);
+  signature = (await ed255.signAsync(contentBytes, signingKeyBytes));
   return tbut.bytesToHex(signature);
 };
 
+// contentBytes = tbut.utf8ToBytes(content)
+// signature = await ed255.signAsync(contentBytes, signingKeyHex)
+// return tbut.bytesToHex(signature)
 export var verify = async function(sigHex, keyHex, content) {
-  var hashHex;
-  hashHex = sha256Hex(content);
-  return (await ed255.verifyAsync(sigHex, hashHex, keyHex));
+  var contentBytes, keyBytes, sigBytes;
+  sigBytes = tbut.hexToBytes(sigHex);
+  keyBytes = tbut.hexToBytes(keyHex);
+  contentBytes = tbut.utf8ToBytes(content);
+  return (await ed255.verifyAsync(sigBytes, contentBytes, keyBytes));
 };
 
+// contentBytes = tbut.utf8ToBytes(content)
+// return await ed255.verifyAsync(sigHex, contentBytes, keyHex)
 export var createSignatureHex = createSignature;
 
 export var verifyHex = verify;
@@ -156,15 +164,15 @@ export var verifyHex = verify;
 //###########################################################
 // Byte Version
 export var createSignatureBytes = async function(content, signingKeyBytes) {
-  var hashBytes;
-  hashBytes = sha256Bytes(content);
-  return (await ed255.signAsync(hashBytes, signingKeyBytes));
+  var contentBytes;
+  contentBytes = tbut.utf8ToBytes(content);
+  return (await ed255.signAsync(contentBytes, signingKeyBytes));
 };
 
 export var verifyBytes = async function(sigBytes, keyBytes, content) {
-  var hashBytes;
-  hashBytes = sha256Bytes(content);
-  return (await ed255.verifyAsync(sigBytes, hashBytes, keyBytes));
+  var contentBytes;
+  contentBytes = tbut.utf8ToBytes(content);
+  return (await ed255.verifyAsync(sigBytes, contentBytes, keyBytes));
 };
 
 //endregion
