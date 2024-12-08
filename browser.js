@@ -444,6 +444,12 @@ export var diffieHellmanSecretHash = async function(secretKeyHex, publicKeyHex, 
   return sharedSecretHex;
 };
 
+export var diffieHellmanSecretHashHex = diffieHellmanSecretHash;
+
+export var createSharedSecretHash = diffieHellmanSecretHash;
+
+export var createSharedSecretHashHex = diffieHellmanSecretHash;
+
 export var diffieHellmanSecretRaw = async function(secretKeyHex, publicKeyHex) {
   var B, aBytes, kB, kBigInt, sharedSecretBytes, sharedSecretHex;
   // a = our SecretKey
@@ -459,9 +465,11 @@ export var diffieHellmanSecretRaw = async function(secretKeyHex, publicKeyHex) {
   return sharedSecretHex;
 };
 
-export var diffieHellmanSecretHashHex = diffieHellmanSecretHash;
-
 export var diffieHellmanSecretRawHex = diffieHellmanSecretRaw;
+
+export var createSharedSecretRaw = diffieHellmanSecretRaw;
+
+export var createSharedSecretRawHex = diffieHellmanSecretRaw;
 
 //###########################################################
 export var elGamalSecretHash = async function(publicKeyHex, contextString = "") {
@@ -502,6 +510,16 @@ export var elGamalSecretHash = async function(publicKeyHex, contextString = "") 
   return {referencePointHex, sharedSecretHex};
 };
 
+export var elGamalSecretHashHex = elGamalSecretHash;
+
+export var referencedSharedSecretHash = elGamalSecretHash;
+
+export var referencedSharedSecretHashHex = elGamalSecretHash;
+
+export var referencedSecretHash = elGamalSecretHash;
+
+export var referencedSecretHashHex = elGamalSecretHash;
+
 export var elGamalSecretRaw = async function(publicKeyHex) {
   var ABytes, B, lB, lBBytes, lBigInt, nBytes, referencePointHex, sharedSecretHex;
   // a = Secret Key of target user
@@ -531,9 +549,15 @@ export var elGamalSecretRaw = async function(publicKeyHex) {
   return {referencePointHex, sharedSecretHex};
 };
 
-export var elGamalSecretHashHex = elGamalSecretHash;
-
 export var elGamalSecretRawHex = elGamalSecretRaw;
+
+export var referencedSharedSecretRaw = elGamalSecretRaw;
+
+export var referencedSharedSecretRawHex = elGamalSecretRaw;
+
+export var referencedSecretRaw = elGamalSecretRaw;
+
+export var referencedSecretRawHex = elGamalSecretRaw;
 
 //###########################################################
 // Bytes Versions
@@ -566,6 +590,8 @@ export var diffieHellmanSecretHashBytes = async function(secretKeyBytes, publicK
   return sharedSecretBytes;
 };
 
+export var sharedSecretHashBytes = diffieHellmanSecretHashBytes;
+
 export var diffieHellmanSecretRawBytes = async function(secretKeyBytes, publicKeyBytes) {
   var B, BHex, kB, kBBytes, kBigInt;
   // a = our SecretKey
@@ -581,6 +607,8 @@ export var diffieHellmanSecretRawBytes = async function(secretKeyBytes, publicKe
   kBBytes = kB.toRawBytes();
   return kBBytes;
 };
+
+export var sharedSecretRawBytes = diffieHellmanSecretRawBytes;
 
 //###########################################################
 export var elGamalSecretHashBytes = async function(publicKeyBytes, contextString = "") {
@@ -623,6 +651,10 @@ export var elGamalSecretHashBytes = async function(publicKeyBytes, contextString
   return {referencePointBytes, sharedSecretBytes};
 };
 
+export var referencedSharedSecretHashBytes = elGamalSecretHashBytes;
+
+export var referencedSecretHashBytes = elGamalSecretHashBytes;
+
 export var elGamalSecretRawBytes = async function(publicKeyBytes) {
   var ABytes, B, BHex, lB, lBBytes, lBigInt, nBytes, referencePointBytes, sharedSecretBytes;
   // a = Secret Key of target user
@@ -653,6 +685,10 @@ export var elGamalSecretRawBytes = async function(publicKeyBytes) {
   referencePointBytes = ABytes;
   return {referencePointBytes, sharedSecretBytes};
 };
+
+export var referencedSharedSecretRawBytes = elGamalSecretRawBytes;
+
+export var referencedSecretRawBytes = elGamalSecretRawBytes;
 
 //endregion
 

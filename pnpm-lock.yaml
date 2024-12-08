@@ -1,0 +1,30 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@noble/ed25519':
+        specifier: ^2.1.0
+        version: 2.1.0
+      thingy-byte-utils:
+        specifier: 0.0.8
+        version: 0.0.8
+
+packages:
+
+  '@noble/ed25519@2.1.0':
+    resolution: {integrity: sha512-KM4qTyXPinyCgMzeYJH/UudpdL+paJXtY3CHtHYZQtBkS8MZoPr4rOikZllIutJe0d06QDQKisyn02gxZ8TcQA==}
+
+  thingy-byte-utils@0.0.8:
+    resolution: {integrity: sha512-m9+aSv0XrU1g6Da61Qq0ZnyflSYx1/uWfD98UFziOV4WMrEzE5eHTjXGhxhFRzauL3EkwujZZJbOBxj8PzHyAg==}
+
+snapshots:
+
+  '@noble/ed25519@2.1.0': {}
+
+  thingy-byte-utils@0.0.8: {}
