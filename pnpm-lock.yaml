@@ -12,19 +12,19 @@ importers:
         specifier: ^3.2.0
         version: 3.2.0
       thingy-byte-utils:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
 
 packages:
 
   '@noble/ed25519@3.2.0':
     resolution: {integrity: sha512-criDgRlnUA09hchYrTy/JUWPIEap5rZxQe6wDWzRx51oWWpDRcUpuNzlgPxDJaOK6AsW9c0wKcj3rKRv6t+bPQ==}
 
-  thingy-byte-utils@0.1.0:
-    resolution: {integrity: sha512-S8Mg8JlBhNfQOpA9YnErRgDARCeLwJMTgJEXR1okpaX+Xqrx9mtj0QllaoLYTDyGd2u9eqitKcc/EvmYxicfoQ==}
+  thingy-byte-utils@0.2.0:
+    resolution: {integrity: sha512-dqejU4Esfs+h/7Sbnu+ScmOURZAl8jQ8EnkSCbQ/VmwC3iYJ2YlrRophX3+GWesWbFLV5RxUQGAjZa6jC0ATcw==}
 
 snapshots:
 
   '@noble/ed25519@3.2.0': {}
 
-  thingy-byte-utils@0.1.0: {}
+  thingy-byte-utils@0.2.0: {}

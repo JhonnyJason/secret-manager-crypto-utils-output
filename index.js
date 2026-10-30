@@ -9,22 +9,34 @@ const randomBytes = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n))
 
 //############################################################
 //#region internalFunctions
-// thingy-byte-utils does not validate - its JS fallback would turn bad hex into garbage
+// thingy-byte-utils validates the content (SyntaxError), not the type
 const hexToBytes = (hex) => {
-    if (typeof hex != "string" || hex.length % 2 || /[^0-9a-fA-F]/.test(hex)) throw new SyntaxError("Invalid hex string!")
+    if (typeof hex != "string") throw new TypeError("Expected a hex string!")
     return tbut.hexToBytes(hex)
+}
+
+const checkBytes = (bytes) => {
+    if (!(bytes instanceof Uint8Array)) throw new TypeError("Expected a Uint8Array!")
 }
 
 // a shorter key would silently become AES-128/192 or fail late inside WebCrypto
 const checkSymKey = (keyBytes) => {
+    checkBytes(keyBytes)
     if (!(keyBytes?.length >= 48)) throw new RangeError("Symmetric key must have at least 48 bytes!")
 }
 
-// lone surrogates would silently become U+FFFD - what is decrypted or verified must be what went in
+// thingy-byte-utils rejects lone surrogates (TypeError), not other types
 const utf8 = (content) => {
-    if (typeof content != "string" || !content.isWellFormed()) throw new TypeError("Content must be a well-formed string!")
+    if (typeof content != "string") throw new TypeError("Content must be a string!")
     return tbut.utf8ToBytes(content)
 }
+
+// hex mode: a hex key gives hex results, a Uint8Array key gives Uint8Array results
+const isHex = (x) => typeof x == "string"
+const asBytes = (x) => isHex(x) ? hexToBytes(x) : x
+const asModeOf = (key, bytes) => isHex(key) ? tbut.bytesToHex(bytes) : bytes
+// { fooBytes } -> { fooHex }
+const asModeOfObject = (key, result) => isHex(key) ? Object.fromEntries(Object.entries(result).map(([k, v]) => [k.replace(/Bytes$/, "Hex"), tbut.bytesToHex(v)])) : result
 
 const toBytes = (content) => (typeof content == "string") ? utf8(content) : content
 
@@ -35,17 +47,37 @@ const concat = (a, b) => {
     return result
 }
 
-// small-order points give a shared secret everybody knows
+// small-order points give a shared secret everybody knows - torsion components are harmless, X25519 clamping removes them
 const publicPoint = (publicKeyBytes) => {
     const P = ed.Point.fromBytes(publicKeyBytes)
     if (P.isSmallOrder()) throw new RangeError("Invalid public key!")
     return P
 }
 
-// sha512(secretKey) clamped and reduced mod ORDER - the ed25519 secret scalar
-const secretScalar = async (secretKeyBytes) => (await ed.utils.getExtendedPublicKeyAsync(secretKeyBytes)).scalar
+// noble checks the length itself, WebCrypto would throw a DOMException instead
+const checkSecretKey = (secretKeyBytes) => {
+    checkBytes(secretKeyBytes)
+    if (secretKeyBytes.length != 32) throw new RangeError("Secret key must have 32 bytes!")
+}
 
-const importAesCbcKey = (keyBytes) => subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt", "decrypt"])
+const { p: P, n: L } = ed.Point.CURVE()
+const bytesToNumberLE = (bytes) => BigInt("0x" + tbut.bytesToHex(bytes.slice().reverse()))
+const numberToBytesLE = (n) => hexToBytes(n.toString(16).padStart(64, "0")).reverse()
+// Montgomery u = (1 + y) / (1 - y) of an Edwards point - the X25519 public key
+const montgomeryU = (point) => {
+    const { y } = point.toAffine()
+    return numberToBytesLE(ed.etc.mod((1n + y) * ed.etc.invert(1n - y, P), P))
+}
+
+// native Ed25519/X25519 where the runtime has it, noble otherwise - both give the same bytes
+// pkcs8 wrappers around a raw 32 byte seed (RFC 8410)
+const ED25519_PKCS8 = hexToBytes("302e020100300506032b657004220420")
+const X25519_PKCS8 = hexToBytes("302e020100300506032b656e04220420")
+const importPkcs8 = (prefix, seed, name, usage) => subtle.importKey("pkcs8", concat(prefix, seed), name, false, [usage])
+const isNative = (prefix, name, usage) => importPkcs8(prefix, new Uint8Array(32), name, usage).then(() => true, () => false)
+const nativeEd25519 = await isNative(ED25519_PKCS8, "Ed25519", "sign")
+const nativeX25519 = await isNative(X25519_PKCS8, "X25519", "deriveBits")
+
 const importAesGcmKey = (keyBytes) => subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"])
 
 //#endregion
@@ -55,10 +87,8 @@ const importAesGcmKey = (keyBytes) => subtle.importKey("raw", keyBytes, { name: 
 export const sha256Bytes = async (content) => new Uint8Array(await subtle.digest("SHA-256", toBytes(content)))
 export const sha512Bytes = async (content) => new Uint8Array(await subtle.digest("SHA-512", toBytes(content)))
 
-export const sha256Hex = async (content) => tbut.bytesToHex(await sha256Bytes(content))
-export const sha512Hex = async (content) => tbut.bytesToHex(await sha512Bytes(content))
-export const sha256 = sha256Hex
-export const sha512 = sha512Hex
+export const sha256 = async (content) => tbut.bytesToHex(await sha256Bytes(content))
+export const sha512 = async (content) => tbut.bytesToHex(await sha512Bytes(content))
 
 //#endregion
 
@@ -69,49 +99,81 @@ export const createKeyPairBytes = async () => {
     const publicKeyBytes = await ed.getPublicKeyAsync(secretKeyBytes)
     return { secretKeyBytes, publicKeyBytes }
 }
-export const createSymKeyBytes = () => randomBytes(48)
-export const createPublicKeyBytes = (secretKeyBytes) => ed.getPublicKeyAsync(secretKeyBytes)
+export const createSymKeyBytes = async () => randomBytes(48)
+const createPublicKeyBytes = (secretKeyBytes) => ed.getPublicKeyAsync(secretKeyBytes)
 
-export const createKeyPairHex = async () => {
-    const { secretKeyBytes, publicKeyBytes } = await createKeyPairBytes()
-    return { secretKeyHex: tbut.bytesToHex(secretKeyBytes), publicKeyHex: tbut.bytesToHex(publicKeyBytes) }
-}
-export const createSymKeyHex = () => tbut.bytesToHex(createSymKeyBytes())
-export const createPublicKeyHex = async (secretKeyHex) => tbut.bytesToHex(await createPublicKeyBytes(hexToBytes(secretKeyHex)))
-export const createKeyPair = createKeyPairHex
-export const createSymKey = createSymKeyHex
-export const createPublicKey = createPublicKeyHex
+// no key to take the mode from: hex, with the …Bytes variants above
+export const createKeyPair = async () => asModeOfObject("", await createKeyPairBytes())
+export const createSymKey = async () => tbut.bytesToHex(await createSymKeyBytes())
+export const createPublicKey = async (secretKey) => asModeOf(secretKey, await createPublicKeyBytes(asBytes(secretKey)))
 
 //#endregion
 
 //############################################################
 //#region signatures
-export const createSignatureBytes = async (content, signingKeyBytes) => ed.signAsync(utf8(content), signingKeyBytes)
-// strict RFC 8032: zip215 accepts small-order keys for which one signature verifies any message
-export const verifyBytes = async (sigBytes, keyBytes, content) => ed.verifyAsync(sigBytes, utf8(content), keyBytes, { zip215: false })
+const createSignatureBytes = async (content, signingKeyBytes) => {
+    const message = utf8(content)
+    checkSecretKey(signingKeyBytes)
+    if (!nativeEd25519) return ed.signAsync(message, signingKeyBytes)
+    const key = await importPkcs8(ED25519_PKCS8, signingKeyBytes, "Ed25519", "sign")
+    return new Uint8Array(await subtle.sign("Ed25519", key, message))
+}
 
-export const createSignatureHex = async (content, signingKeyHex) => tbut.bytesToHex(await createSignatureBytes(content, hexToBytes(signingKeyHex)))
-export const verifyHex = (sigHex, keyHex, content) => verifyBytes(hexToBytes(sigHex), hexToBytes(keyHex), content)
-export const createSignature = createSignatureHex
-export const verify = verifyHex
+// undefined when valid, else an error string - never throws, and a missing await is truthy so it fails closed
+// strict RFC 8032, the same answer on every path: canonical A and R, S < L, cofactorless equation
+// A and R are decoded and small-order rejected here, as the WebCrypto spec demands - node does, bun/deno native don't
+// a small-order key would let one signature verify any message
+const verifySignatureBytes = async (sigBytes, keyBytes, content) => {
+    try {
+        const message = utf8(content)
+        checkBytes(sigBytes)
+        if (sigBytes.length != 64) throw new RangeError("Signature must have 64 bytes!")
+        const A = ed.Point.fromBytes(keyBytes, false)
+        let R
+        try { R = ed.Point.fromBytes(sigBytes.subarray(0, 32), false) } catch { return "Invalid signature!" }
+        if (A.isSmallOrder() || R.isSmallOrder()) return "Invalid signature!"
+        if (await (nativeEd25519 ? verifyNative : verifyFallback)(sigBytes, keyBytes, A, R, message)) return undefined
+        return "Invalid signature!"
+    } catch { return "Malformed input!" }
+}
+
+const verifyNative = async (sigBytes, keyBytes, A, R, message) => {
+    const key = await subtle.importKey("raw", keyBytes, "Ed25519", false, ["verify"])
+    return subtle.verify("Ed25519", key, sigBytes, message)
+}
+
+// S·G == R + k·A without the cofactor, like every native implementation - noble's cofactored check accepts more
+const verifyFallback = async (sigBytes, keyBytes, A, R, message) => {
+    const S = bytesToNumberLE(sigBytes.subarray(32))
+    if (S >= L) return false
+    const k = bytesToNumberLE(await sha512Bytes(concat(concat(sigBytes.subarray(0, 32), keyBytes), message))) % L
+    return ed.Point.BASE.multiply(S, false).equals(R.add(A.multiply(k, false)))
+}
+
+export const createSignature = async (content, signingKey) => asModeOf(signingKey, await createSignatureBytes(content, asBytes(signingKey)))
+export const verifySignature = async (sig, key, content) => {
+    try { return await verifySignatureBytes(asBytes(sig), asBytes(key), content) } catch { return "Malformed input!" }
+}
 
 //#endregion
 
 //############################################################
 //#region symmetric encryption
 // format v1: 0x01 ‖ nonce(12) ‖ AES-256-GCM( padLen(1) ‖ content ‖ random(padLen) ) ‖ tag(16)
+// context: GCM additionalData, not transmitted - decrypt needs the same one; "" gives the same output as none
 // key: 48 bytes, v1 uses bytes 16..47 as AES key (bytes 0..15 were the legacy CBC iv)
 // subarray respects the byteOffset of views
 const V1 = 0x01
 const NONCE_LENGTH = 12
 const V1_MIN_LENGTH = 1 + NONCE_LENGTH + 16 + 1 // version, nonce, tag, padLen
 
-export const symmetricEncryptBytes = async (content, keyBytes) => {
+const symmetricEncryptBytes = async (content, keyBytes, context = "") => {
     checkSymKey(keyBytes)
     const key = await importAesGcmKey(keyBytes.subarray(16, 48))
     // random nonce per message, never a parameter: a reuse under one key breaks GCM
     const nonce = randomBytes(NONCE_LENGTH)
-    const sealed = await subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, key, padContent(content))
+    const params = { name: "AES-GCM", iv: nonce, tagLength: 128, additionalData: utf8(context) }
+    const sealed = await subtle.encrypt(params, key, padContent(content))
     const result = new Uint8Array(1 + NONCE_LENGTH + sealed.byteLength)
     result[0] = V1
     result.set(nonce, 1)
@@ -119,28 +181,24 @@ export const symmetricEncryptBytes = async (content, keyBytes) => {
     return result
 }
 
-// v1 when the tag verifies, else legacy CBC (1/256 of legacy ciphertexts start with 0x01 too)
-export const symmetricDecryptBytes = async (gibbrishBytes, keyBytes) => {
+// v1 only - legacy ciphertext is read by the ./legacy entry point
+const symmetricDecryptBytes = async (gibbrishBytes, keyBytes, context = "") => {
     checkSymKey(keyBytes)
+    checkBytes(gibbrishBytes)
+    const additionalData = utf8(context)
     if (gibbrishBytes[0] == V1 && gibbrishBytes.length >= V1_MIN_LENGTH) {
-        try { return await decryptV1(gibbrishBytes, keyBytes) } catch { }
+        try { return await decryptV1(gibbrishBytes, keyBytes, additionalData) } catch { }
     }
-    try { return await decryptLegacy(gibbrishBytes, keyBytes) } catch { }
     throw new Error("Decryption failed!")
 }
 
-const decryptV1 = async (gibbrishBytes, keyBytes) => {
+const decryptV1 = async (gibbrishBytes, keyBytes, additionalData) => {
     const key = await importAesGcmKey(keyBytes.subarray(16, 48))
     const nonce = gibbrishBytes.subarray(1, 1 + NONCE_LENGTH)
     // WebCrypto verifies the tag before releasing any plaintext
-    const padded = await subtle.decrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, key, gibbrishBytes.subarray(1 + NONCE_LENGTH))
+    const params = { name: "AES-GCM", iv: nonce, tagLength: 128, additionalData }
+    const padded = await subtle.decrypt(params, key, gibbrishBytes.subarray(1 + NONCE_LENGTH))
     return unpadContent(new Uint8Array(padded))
-}
-
-const decryptLegacy = async (gibbrishBytes, keyBytes) => {
-    const iv = keyBytes.subarray(0, 16)
-    const key = await importAesCbcKey(keyBytes.subarray(16, 48))
-    return unsaltContent(new Uint8Array(await subtle.decrypt({ name: "AES-CBC", iv }, key, gibbrishBytes)))
 }
 
 const padContent = (content) => {
@@ -159,17 +217,17 @@ const unpadContent = (paddedBytes) => {
     return tbut.bytesToUtf8(paddedBytes.subarray(1, end))
 }
 
-export const symmetricEncryptHex = async (content, keyHex) => tbut.bytesToHex(await symmetricEncryptBytes(content, hexToBytes(keyHex)))
-export const symmetricDecryptHex = (gibbrishHex, keyHex) => symmetricDecryptBytes(hexToBytes(gibbrishHex), hexToBytes(keyHex))
-export const symmetricEncrypt = symmetricEncryptHex
-export const symmetricDecrypt = symmetricDecryptHex
+export const symmetricEncrypt = async (content, key, context) => asModeOf(key, await symmetricEncryptBytes(content, asBytes(key), context))
+export const symmetricDecrypt = async (gibbrish, key, context) => symmetricDecryptBytes(asBytes(gibbrish), asBytes(key), context)
 
-// PBKDF2-SHA256 -> 48 byte symmetric key, for low-entropy inputs (passwords, PINs) only
+// PBKDF2-SHA256 -> 48 byte symmetric key, for passwords only
 // NFC: the same password typed on different platforms may arrive in different unicode forms
 export const deriveSymKeyFromPassword = async (password, saltHex = tbut.bytesToHex(randomBytes(16)), iterations = 600000) => {
-    if (!Number.isInteger(iterations) || iterations < 1) throw new RangeError("Iterations must be a positive integer!")
+    // below 1k is no protection, above 10M an accidental DoS
+    if (!Number.isInteger(iterations) || iterations < 1000 || iterations > 10000000) throw new RangeError("Iterations must be an integer in 1000..10000000!")
     const salt = hexToBytes(saltHex)
     if (salt.length < 16) throw new RangeError("Salt must have at least 16 bytes!")
+    utf8(password) // thingy-byte-utils rejects lone surrogates before Firefox's normalize would turn them into U+FFFD
     const baseKey = await subtle.importKey("raw", utf8(password.normalize("NFC")), "PBKDF2", false, ["deriveBits"])
     const params = { name: "PBKDF2", hash: "SHA-256", salt, iterations }
     const keyHex = tbut.bytesToHex(await subtle.deriveBits(params, baseKey, 48 * 8))
@@ -180,133 +238,79 @@ export const deriveSymKeyFromPassword = async (password, saltHex = tbut.bytesToH
 
 //############################################################
 //#region asymmetric encryption
-// ElGamal style: A = lG is sent along, lB = kA is the shared secret, sha512(lB) the symmetric key
-export const asymmetricEncryptBytes = async (content, publicKeyBytes) => {
+// ElGamal style: referencePoint A is sent along, DH(n, B) = DH(k, A) is the shared secret
+// symmetric key = sha512(shared ‖ A): A and -A give the same X25519 secret, A's exact bytes make the key differ
+const asymmetricEncryptBytes = async (content, publicKeyBytes, context = "") => {
     const { referencePointBytes, sharedSecretBytes } = await elGamalSecretRawBytes(publicKeyBytes)
-    const encryptedContentBytes = await symmetricEncryptBytes(content, await sha512Bytes(sharedSecretBytes))
+    const keyBytes = await sha512Bytes(concat(sharedSecretBytes, referencePointBytes))
+    const encryptedContentBytes = await symmetricEncryptBytes(content, keyBytes, context)
     return { referencePointBytes, encryptedContentBytes }
 }
 
-export const asymmetricDecryptBytes = async (secrets, secretKeyBytes) => {
-    const ABytes = secrets.referencePointBytes || secrets.referencePoint
-    const gibbrishBytes = secrets.encryptedContentBytes || secrets.encryptedContent
-    if (ABytes == null || gibbrishBytes == null) throw new Error("Invalid secrets Object!")
+const asymmetricDecryptBytes = async (ABytes, gibbrishBytes, secretKeyBytes, context = "") => {
     const kABytes = await diffieHellmanSecretRawBytes(secretKeyBytes, ABytes)
-    return symmetricDecryptBytes(gibbrishBytes, await sha512Bytes(kABytes))
+    return symmetricDecryptBytes(gibbrishBytes, await sha512Bytes(concat(kABytes, ABytes)), context)
 }
 
-export const asymmetricEncryptHex = async (content, publicKeyHex) => {
-    const { referencePointBytes, encryptedContentBytes } = await asymmetricEncryptBytes(content, hexToBytes(publicKeyHex))
-    return { referencePointHex: tbut.bytesToHex(referencePointBytes), encryptedContentHex: tbut.bytesToHex(encryptedContentBytes) }
-}
+export const asymmetricEncrypt = async (content, publicKey, context) => asModeOfObject(publicKey, await asymmetricEncryptBytes(content, asBytes(publicKey), context))
 
-export const asymmetricDecryptHex = (secrets, secretKeyHex) => {
-    const AHex = secrets.referencePointHex || secrets.referencePoint
-    const gibbrishHex = secrets.encryptedContentHex || secrets.encryptedContent
-    if (AHex == null || gibbrishHex == null) throw new Error("Invalid secrets Object!")
-    const secretsBytes = { referencePointBytes: hexToBytes(AHex), encryptedContentBytes: hexToBytes(gibbrishHex) }
-    return asymmetricDecryptBytes(secretsBytes, hexToBytes(secretKeyHex))
+// takes the …Hex and the …Bytes property names
+export const asymmetricDecrypt = async (secrets, secretKey, context) => {
+    const A = secrets.referencePointHex || secrets.referencePointBytes
+    const gibbrish = secrets.encryptedContentHex || secrets.encryptedContentBytes
+    if (A == null || gibbrish == null) throw new Error("Invalid secrets Object!")
+    return asymmetricDecryptBytes(asBytes(A), asBytes(gibbrish), asBytes(secretKey), context)
 }
-export const asymmetricEncrypt = asymmetricEncryptHex
-export const asymmetricDecrypt = asymmetricDecryptHex
 
 //#endregion
 
 //############################################################
 //#region diffieHellman/ElGamal secrets
-// k = secretScalar(our secretKey), B = their publicKey, kB = shared secret
-export const diffieHellmanSecretRawBytes = async (secretKeyBytes, publicKeyBytes) => {
+// X25519: h = sha512(our secretKey)[0:32], B = their publicKey, shared secret = u(clamp(h)·B) - raw is the same as v0.1.0-0.2.0
+// clamping makes the scalar a multiple of 8, so a torsion component of B drops out
+const diffieHellmanSecretRawBytes = async (secretKeyBytes, publicKeyBytes) => {
+    checkSecretKey(secretKeyBytes)
     const B = publicPoint(publicKeyBytes)
-    return B.multiply(await secretScalar(secretKeyBytes)).toBytes()
-}
-
-export const diffieHellmanSecretHashBytes = async (secretKeyBytes, publicKeyBytes, contextString = "") => {
-    const kBBytes = await diffieHellmanSecretRawBytes(secretKeyBytes, publicKeyBytes)
-    return sha512Bytes(concat(kBBytes, utf8(contextString)))
-}
-
-// one-time secret n -> l = secretScalar(n), A = lG = referencePoint, lB = shared secret
-export const elGamalSecretRawBytes = async (publicKeyBytes) => {
-    const B = publicPoint(publicKeyBytes)
-    const { scalar, pointBytes } = await ed.utils.getExtendedPublicKeyAsync(ed.utils.randomSecretKey())
-    return { referencePointBytes: pointBytes, sharedSecretBytes: B.multiply(scalar).toBytes() }
-}
-
-export const elGamalSecretHashBytes = async (publicKeyBytes, contextString = "") => {
-    const { referencePointBytes, sharedSecretBytes } = await elGamalSecretRawBytes(publicKeyBytes)
-    return { referencePointBytes, sharedSecretBytes: await sha512Bytes(concat(sharedSecretBytes, utf8(contextString))) }
-}
-
-export const diffieHellmanSecretRawHex = async (secretKeyHex, publicKeyHex) => tbut.bytesToHex(await diffieHellmanSecretRawBytes(hexToBytes(secretKeyHex), hexToBytes(publicKeyHex)))
-export const diffieHellmanSecretHashHex = async (secretKeyHex, publicKeyHex, contextString = "") => tbut.bytesToHex(await diffieHellmanSecretHashBytes(hexToBytes(secretKeyHex), hexToBytes(publicKeyHex), contextString))
-
-export const elGamalSecretRawHex = async (publicKeyHex) => {
-    const { referencePointBytes, sharedSecretBytes } = await elGamalSecretRawBytes(hexToBytes(publicKeyHex))
-    return { referencePointHex: tbut.bytesToHex(referencePointBytes), sharedSecretHex: tbut.bytesToHex(sharedSecretBytes) }
-}
-export const elGamalSecretHashHex = async (publicKeyHex, contextString = "") => {
-    const { referencePointBytes, sharedSecretBytes } = await elGamalSecretHashBytes(hexToBytes(publicKeyHex), contextString)
-    return { referencePointHex: tbut.bytesToHex(referencePointBytes), sharedSecretHex: tbut.bytesToHex(sharedSecretBytes) }
-}
-
-// aliases - kept for compatibility
-export const diffieHellmanSecretRaw = diffieHellmanSecretRawHex
-export const createSharedSecretRaw = diffieHellmanSecretRawHex
-export const createSharedSecretRawHex = diffieHellmanSecretRawHex
-export const sharedSecretRawBytes = diffieHellmanSecretRawBytes
-
-export const diffieHellmanSecretHash = diffieHellmanSecretHashHex
-export const createSharedSecretHash = diffieHellmanSecretHashHex
-export const createSharedSecretHashHex = diffieHellmanSecretHashHex
-export const sharedSecretHashBytes = diffieHellmanSecretHashBytes
-
-export const elGamalSecretRaw = elGamalSecretRawHex
-export const referencedSharedSecretRaw = elGamalSecretRawHex
-export const referencedSharedSecretRawHex = elGamalSecretRawHex
-export const referencedSecretRaw = elGamalSecretRawHex
-export const referencedSecretRawHex = elGamalSecretRawHex
-export const referencedSharedSecretRawBytes = elGamalSecretRawBytes
-export const referencedSecretRawBytes = elGamalSecretRawBytes
-
-export const elGamalSecretHash = elGamalSecretHashHex
-export const referencedSharedSecretHash = elGamalSecretHashHex
-export const referencedSharedSecretHashHex = elGamalSecretHashHex
-export const referencedSecretHash = elGamalSecretHashHex
-export const referencedSecretHashHex = elGamalSecretHashHex
-export const referencedSharedSecretHashBytes = elGamalSecretHashBytes
-export const referencedSecretHashBytes = elGamalSecretHashBytes
-
-//#endregion
-
-//############################################################
-//#region legacy salt envelope
-// strips the salt envelope v0.3.1 put around content before AES-CBC
-const unsaltContent = (contentBytes) => {
-    const fullLength = contentBytes.length
-    const limit = Math.min(fullLength, 160)
-
-    let sum = 0
-    let idx = 32
-    while (idx--) sum += contentBytes[idx]
-
-    let start, padding
-    for (idx = 32; idx <= limit; idx++) {
-        if (sum == (contentBytes[idx] * 256 + contentBytes[idx + 1])) {
-            start = idx + 3
-            padding = contentBytes[idx + 2]
-            break
-        }
-        sum += contentBytes[idx]
+    const h = (await sha512Bytes(secretKeyBytes)).subarray(0, 32)
+    if (nativeX25519) {
+        const privateKey = await importPkcs8(X25519_PKCS8, h, "X25519", "deriveBits")
+        const publicKey = await subtle.importKey("raw", montgomeryU(B), "X25519", false, [])
+        return new Uint8Array(await subtle.deriveBits({ name: "X25519", public: publicKey }, privateKey, 256))
     }
-    if (idx > limit) throw new Error("Unsalt: No valid prefix ending found!")
-
-    // Check if the padding matches the salt - so we can verify here nobody has tampered with it
-    const end = fullLength - 1
-    let invalid = 0
-    for (idx = 0; idx < padding; idx++) invalid += (contentBytes[idx] != contentBytes[end - idx])
-    if (invalid) throw new Error("Unsalt: Postfix and prefix did not match as expected!")
-
-    return tbut.bytesToUtf8(contentBytes.subarray(start, fullLength - padding))
+    h[0] &= 248; h[31] &= 127; h[31] |= 64
+    // clamp(h)·B as (clamp(h)/8)·(8B): noble needs a scalar below L
+    return montgomeryU(B.clearCofactor().multiply((bytesToNumberLE(h) >> 3n) % L))
 }
+
+// sha512(shared ‖ lower publicKey ‖ higher publicKey ‖ utf8(context)): binds the secret to both public keys as transmitted
+// B, -B and B + torsion give the same raw secret, but a different hash - sorted, so both sides hash the same order
+const hashSecret = (sharedSecretBytes, publicKeyBytes1, publicKeyBytes2, contextString) => {
+    const keys = tbut.bytesToHex(publicKeyBytes1) <= tbut.bytesToHex(publicKeyBytes2) ? [publicKeyBytes1, publicKeyBytes2] : [publicKeyBytes2, publicKeyBytes1]
+    return sha512Bytes(concat(concat(sharedSecretBytes, concat(...keys)), utf8(contextString)))
+}
+
+const diffieHellmanSecretHashBytes = async (secretKeyBytes, publicKeyBytes, contextString = "") => {
+    const kBBytes = await diffieHellmanSecretRawBytes(secretKeyBytes, publicKeyBytes)
+    return hashSecret(kBBytes, await createPublicKeyBytes(secretKeyBytes), publicKeyBytes, contextString)
+}
+
+// one-time secret key n, A = publicKey(n) = referencePoint, shared secret = DH(n, B)
+const elGamalSecretRawBytes = async (publicKeyBytes) => {
+    const n = ed.utils.randomSecretKey()
+    const sharedSecretBytes = await diffieHellmanSecretRawBytes(n, publicKeyBytes)
+    return { referencePointBytes: await createPublicKeyBytes(n), sharedSecretBytes }
+}
+
+const elGamalSecretHashBytes = async (publicKeyBytes, contextString = "") => {
+    const { referencePointBytes, sharedSecretBytes } = await elGamalSecretRawBytes(publicKeyBytes)
+    return { referencePointBytes, sharedSecretBytes: await hashSecret(sharedSecretBytes, referencePointBytes, publicKeyBytes, contextString) }
+}
+
+// two keys: the secret key decides the mode
+export const diffieHellmanSecretRaw = async (secretKey, publicKey) => asModeOf(secretKey, await diffieHellmanSecretRawBytes(asBytes(secretKey), asBytes(publicKey)))
+export const diffieHellmanSecretHash = async (secretKey, publicKey, contextString) => asModeOf(secretKey, await diffieHellmanSecretHashBytes(asBytes(secretKey), asBytes(publicKey), contextString))
+
+export const elGamalSecretRaw = async (publicKey) => asModeOfObject(publicKey, await elGamalSecretRawBytes(asBytes(publicKey)))
+export const elGamalSecretHash = async (publicKey, contextString) => asModeOfObject(publicKey, await elGamalSecretHashBytes(asBytes(publicKey), contextString))
 
 //#endregion
