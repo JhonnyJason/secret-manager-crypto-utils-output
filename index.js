@@ -9,36 +9,30 @@ const randomBytes = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n))
 
 //############################################################
 //#region internalFunctions
-// thingy-byte-utils validates the content (SyntaxError), not the type
-const hexToBytes = (hex) => {
-    if (typeof hex != "string") throw new TypeError("Expected a hex string!")
-    return tbut.hexToBytes(hex)
-}
+// thingy-byte-utils checks types and content itself: hexToBytes/utf8ToBytes throw TypeError (not a string, lone surrogate) or SyntaxError (bad hex)
+const { hexToBytes, utf8ToBytes: utf8 } = tbut
 
+// plain memory only: WebCrypto rejects shared buffers on node/bun and resizable ones on bun and in browsers (Firefox freezes)
 const checkBytes = (bytes) => {
     if (!(bytes instanceof Uint8Array)) throw new TypeError("Expected a Uint8Array!")
+    const buffer = bytes.buffer
+    if (!(buffer instanceof ArrayBuffer) || buffer.resizable || buffer.detached) throw new TypeError("Expected a Uint8Array on a plain ArrayBuffer!")
 }
 
 // a shorter key would silently become AES-128/192 or fail late inside WebCrypto
 const checkSymKey = (keyBytes) => {
     checkBytes(keyBytes)
-    if (!(keyBytes?.length >= 48)) throw new RangeError("Symmetric key must have at least 48 bytes!")
-}
-
-// thingy-byte-utils rejects lone surrogates (TypeError), not other types
-const utf8 = (content) => {
-    if (typeof content != "string") throw new TypeError("Content must be a string!")
-    return tbut.utf8ToBytes(content)
+    if (keyBytes.length < 48) throw new RangeError("Symmetric key must have at least 48 bytes!")
 }
 
 // hex mode: a hex key gives hex results, a Uint8Array key gives Uint8Array results
 const isHex = (x) => typeof x == "string"
-const asBytes = (x) => isHex(x) ? hexToBytes(x) : x
+const asBytes = (x) => isHex(x) ? hexToBytes(x) : (checkBytes(x), x)
 const asModeOf = (key, bytes) => isHex(key) ? tbut.bytesToHex(bytes) : bytes
 // { fooBytes } -> { fooHex }
 const asModeOfObject = (key, result) => isHex(key) ? Object.fromEntries(Object.entries(result).map(([k, v]) => [k.replace(/Bytes$/, "Hex"), tbut.bytesToHex(v)])) : result
 
-const toBytes = (content) => (typeof content == "string") ? utf8(content) : content
+const toBytes = (content) => (content instanceof Uint8Array) ? (checkBytes(content), content) : utf8(content)
 
 const concat = (a, b) => {
     const result = new Uint8Array(a.length + b.length)
@@ -48,8 +42,11 @@ const concat = (a, b) => {
 }
 
 // small-order points give a shared secret everybody knows - torsion components are harmless, X25519 clamping removes them
+// not on the curve or non-canonical: one RangeError, not noble's plain Error
 const publicPoint = (publicKeyBytes) => {
-    const P = ed.Point.fromBytes(publicKeyBytes)
+    checkBytes(publicKeyBytes)
+    let P
+    try { P = ed.Point.fromBytes(publicKeyBytes) } catch { throw new RangeError("Invalid public key!") }
     if (P.isSmallOrder()) throw new RangeError("Invalid public key!")
     return P
 }
@@ -61,7 +58,8 @@ const checkSecretKey = (secretKeyBytes) => {
 }
 
 const { p: P, n: L } = ed.Point.CURVE()
-const bytesToNumberLE = (bytes) => BigInt("0x" + tbut.bytesToHex(bytes.slice().reverse()))
+// toReversed, not slice().reverse(): Buffer's slice is a view and would reverse the caller's bytes
+const bytesToNumberLE = (bytes) => BigInt("0x" + tbut.bytesToHex(bytes.toReversed()))
 const numberToBytesLE = (n) => hexToBytes(n.toString(16).padStart(64, "0")).reverse()
 // Montgomery u = (1 + y) / (1 - y) of an Edwards point - the X25519 public key
 const montgomeryU = (point) => {
@@ -77,6 +75,12 @@ const importPkcs8 = (prefix, seed, name, usage) => subtle.importKey("pkcs8", con
 const isNative = (prefix, name, usage) => importPkcs8(prefix, new Uint8Array(32), name, usage).then(() => true, () => false)
 const nativeEd25519 = await isNative(ED25519_PKCS8, "Ed25519", "sign")
 const nativeX25519 = await isNative(X25519_PKCS8, "X25519", "deriveBits")
+
+// WebKit's native Ed25519 throws, answers wrong or hangs from about 65000 bytes - large messages take noble there
+// Chromium says AppleWebKit/537.36 too, the real WebKit engines (Safari, Epiphany, every iOS browser) another version
+// shortcut: Safari is untested and may not have the bug, remove once WebKit fixes it (plan/deferred.md)
+const webkit = /AppleWebKit\/(?!537\.36)/.test(globalThis.navigator?.userAgent ?? "")
+const useNativeEd25519 = (message) => nativeEd25519 && !(webkit && message.length >= 32768)
 
 const importAesGcmKey = (keyBytes) => subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"])
 
@@ -114,7 +118,7 @@ export const createPublicKey = async (secretKey) => asModeOf(secretKey, await cr
 const createSignatureBytes = async (content, signingKeyBytes) => {
     const message = utf8(content)
     checkSecretKey(signingKeyBytes)
-    if (!nativeEd25519) return ed.signAsync(message, signingKeyBytes)
+    if (!useNativeEd25519(message)) return ed.signAsync(message, signingKeyBytes)
     const key = await importPkcs8(ED25519_PKCS8, signingKeyBytes, "Ed25519", "sign")
     return new Uint8Array(await subtle.sign("Ed25519", key, message))
 }
@@ -123,19 +127,19 @@ const createSignatureBytes = async (content, signingKeyBytes) => {
 // strict RFC 8032, the same answer on every path: canonical A and R, S < L, cofactorless equation
 // A and R are decoded and small-order rejected here, as the WebCrypto spec demands - node does, bun/deno native don't
 // a small-order key would let one signature verify any message
-const verifySignatureBytes = async (sigBytes, keyBytes, content) => {
-    try {
-        const message = utf8(content)
-        checkBytes(sigBytes)
-        if (sigBytes.length != 64) throw new RangeError("Signature must have 64 bytes!")
-        const A = ed.Point.fromBytes(keyBytes, false)
-        let R
-        try { R = ed.Point.fromBytes(sigBytes.subarray(0, 32), false) } catch { return "Invalid signature!" }
-        if (A.isSmallOrder() || R.isSmallOrder()) return "Invalid signature!"
-        if (await (nativeEd25519 ? verifyNative : verifyFallback)(sigBytes, keyBytes, A, R, message)) return undefined
-        return "Invalid signature!"
-    } catch { return "Malformed input!" }
-}
+// the catch only equalizes what our helpers and noble throw
+export const verifySignature = async (sig, key, content) => { try {
+    const sigBytes = asBytes(sig), keyBytes = asBytes(key)
+    const message = utf8(content)
+    if (sigBytes.length != 64) return "Malformed input!"
+    const A = ed.Point.fromBytes(keyBytes, false)
+    let R
+    try { R = ed.Point.fromBytes(sigBytes.subarray(0, 32), false) } catch { return "Invalid signature!" }
+    if (A.isSmallOrder() || R.isSmallOrder()) return "Invalid signature!"
+    if (await (useNativeEd25519(message) ? verifyNative : verifyFallback)(sigBytes, keyBytes, A, R, message)) return undefined
+    return "Invalid signature!"
+
+} catch { return "Malformed input!" } }
 
 const verifyNative = async (sigBytes, keyBytes, A, R, message) => {
     const key = await subtle.importKey("raw", keyBytes, "Ed25519", false, ["verify"])
@@ -151,9 +155,6 @@ const verifyFallback = async (sigBytes, keyBytes, A, R, message) => {
 }
 
 export const createSignature = async (content, signingKey) => asModeOf(signingKey, await createSignatureBytes(content, asBytes(signingKey)))
-export const verifySignature = async (sig, key, content) => {
-    try { return await verifySignatureBytes(asBytes(sig), asBytes(key), content) } catch { return "Malformed input!" }
-}
 
 //#endregion
 
@@ -186,9 +187,9 @@ const symmetricDecryptBytes = async (gibbrishBytes, keyBytes, context = "") => {
     checkSymKey(keyBytes)
     checkBytes(gibbrishBytes)
     const additionalData = utf8(context)
-    if (gibbrishBytes[0] == V1 && gibbrishBytes.length >= V1_MIN_LENGTH) {
-        try { return await decryptV1(gibbrishBytes, keyBytes, additionalData) } catch { }
-    }
+    if (gibbrishBytes[0] == V1 && gibbrishBytes.length >= V1_MIN_LENGTH) { try { 
+        return await decryptV1(gibbrishBytes, keyBytes, additionalData) 
+    } catch { } }
     throw new Error("Decryption failed!")
 }
 
@@ -227,11 +228,11 @@ export const deriveSymKeyFromPassword = async (password, saltHex = tbut.bytesToH
     if (!Number.isInteger(iterations) || iterations < 1000 || iterations > 10000000) throw new RangeError("Iterations must be an integer in 1000..10000000!")
     const salt = hexToBytes(saltHex)
     if (salt.length < 16) throw new RangeError("Salt must have at least 16 bytes!")
-    utf8(password) // thingy-byte-utils rejects lone surrogates before Firefox's normalize would turn them into U+FFFD
+    utf8(password) // rejects non-strings and lone surrogates before Firefox's normalize would turn them into U+FFFD
     const baseKey = await subtle.importKey("raw", utf8(password.normalize("NFC")), "PBKDF2", false, ["deriveBits"])
     const params = { name: "PBKDF2", hash: "SHA-256", salt, iterations }
     const keyHex = tbut.bytesToHex(await subtle.deriveBits(params, baseKey, 48 * 8))
-    return { keyHex, saltHex, iterations }
+    return { keyHex, saltHex: tbut.bytesToHex(salt), iterations }
 }
 
 //#endregion

@@ -5,6 +5,8 @@ Starting with the [Secret Management](https://hackmd.io/PZjpRfzPSBCqS-8K54x2jA) 
 This evolved to a neat cryptographic backbone based on Curve25519, AES and SHA-2.
 Usable in the backend and the frontend.
 
+It is forward-looking: we follow current runtimes and current cryptographic practice, and change formats and APIs when developments call for it, instead of keeping long backwards compatibility. Breaking changes are listed under [Breaking Updates](#breaking-updates), and old data is read by the [legacy entry point](#legacy-entry-point) only until it is converted.
+
 It is:
 - sha256
 - sha512
@@ -19,7 +21,11 @@ It is:
 There is a convenience package around this - the [Thingy-Crypto-Node](https://www.npmjs.com/package/thingy-crypto-node)
 
 ## Usage
-One implementation on WebCrypto for node (>= 20), deno, bun, browsers and workers. Every function returns a Promise.
+One implementation on WebCrypto for node, deno, bun, browsers and workers. Every function returns a Promise.
+
+**Supported runtimes:** current versions - tested with node 22 and 26, current deno and bun, Chromium, Chrome and Firefox. Older runtimes may work, but if they don't, that won't be fixed.
+
+In browsers WebCrypto exists only in a secure context (HTTPS or localhost): on plain HTTP the import itself fails. The module uses top-level `await` to detect native Ed25519/X25519 once, so bundlers must target ES2022 or later.
 
 Ed25519 and X25519 run natively in WebCrypto where the runtime has them (node, deno, bun, current browsers), and on [noble-ed25519](#noble-ed25519) otherwise. Both paths give the same bytes and the same verification answers, and the test suite runs on each of them. Exceptions: [WebKitGTK](#known-runtime-issues).
 
@@ -63,7 +69,7 @@ if (!(await secUtl.verify(sig, publicKey, content))) return reject()
 if (await secUtl.verifySignature(sig, publicKey, content)) return reject()
 ```
 
-Every other function throws on malformed input.
+Every other function rejects on malformed input - see [Errors](#errors).
 
 ### Parameter conventions
 - One function per operation. Keys and byte data are hex strings or `Uint8Array`s, and **the key decides the mode**: a hex key gives hex results, a `Uint8Array` key gives `Uint8Array` results. For Diffie-Hellman the `secretKey` decides. Other byte arguments may come in either form.
@@ -72,6 +78,22 @@ Every other function throws on malformed input.
 - Content (`contentString`) is always a `string`. Only the shas also take a `Uint8Array`.
 - Mind the argument order: `createSignature(contentString, secretKey)`, but `verifySignature(signature, publicKey, contentString)`.
 - **Hex output is always lowercase. Hex input is case-insensitive.** Compare keys lowercased or as bytes, never as raw strings from different sources.
+
+#### Input types
+| Input | Status | Behaviour |
+|---|---|---|
+| lowercase hex `string` | **recommended** for anything stored or sent | upper case works too. Odd length, a `0x` prefix or whitespace → `SyntaxError`. `""` is 0 bytes, so as a key → `RangeError` |
+| plain `Uint8Array` | **recommended** for bytes mode | |
+| `Buffer`, a `subarray` view | accepted | same result as a plain `Uint8Array`. Results are always plain `Uint8Array`, never `Buffer` |
+| a `Uint8Array` on a resizable, `SharedArrayBuffer` or transferred (detached) buffer | rejected | `TypeError` on every runtime (WebCrypto takes them on some runtimes only) - copy it: `new Uint8Array(view)` |
+| `ArrayBuffer`, `DataView`, `Uint8ClampedArray`, `number[]` | rejected | `TypeError` - wrap it: `new Uint8Array(arrayBuffer)` |
+
+- Byte inputs are not copied: don't change them until the Promise settles. We never change them.
+- Returned `Uint8Array`s are always new, never a view of an input or of shared memory.
+- **Content is a string.** To sign or encrypt binary data, hex-encode it first and decode after decrypting. Only the shas take a `Uint8Array` directly.
+- Any well-formed string is content, `""` included. Lone surrogates (`"a\uD800"`) → `TypeError`. A BOM is kept as bytes.
+- **No Unicode normalization**, except for passwords in `deriveSymKeyFromPassword`: `"é"` and `"é"` sign, hash and encrypt differently. Text typed on different platforms that must match: `content.normalize("NFC")` first.
+- `context` is a string as well, and `""` is the same as no context.
 
 ```js
 // shas - content: string or Uint8Array
@@ -116,7 +138,15 @@ elGamalSecretRaw(publicKey) -> { referencePointHex, sharedSecretHex } | { refere
 elGamalSecretHash(publicKey, context = "") -> { referencePointHex, sharedSecretHex } | { referencePointBytes, sharedSecretBytes }
 ```
 
-Errors: invalid hex → `SyntaxError`; content that is not a well-formed string, or bytes that are not a `Uint8Array` → `TypeError`; wrong key lengths, small-order public keys, short KDF salt, iterations out of range → `RangeError`; any decryption failure → `Error("Decryption failed!")`. `verifySignature` is the exception: it never throws.
+### Errors
+Every function except `verifySignature` rejects with an `Error` on bad input. Our checks throw the same type on every runtime, so the type tells you what went wrong:
+- `SyntaxError`: invalid hex
+- `TypeError`: a wrong argument type - hex, content, context or password that is not a string, bytes that are not a `Uint8Array` on a plain `ArrayBuffer` (see [Input types](#input-types)) - and strings with lone surrogates
+- `RangeError`: wrong key lengths, public keys and reference points that are not valid points (not on the curve, non-canonical, small-order), a KDF salt below 16 bytes, iterations that are not an integer in 1000..10000000
+- `Error("Decryption failed!")`: the decryption itself failed - wrong key, wrong context, changed or cut data. Generic on purpose, it never says why
+- `Error("Invalid secrets Object!")`: a secrets object without its referencePoint or encryptedContent (`null` or `undefined` as secrets → `TypeError`)
+
+Only `"Decryption failed!"` is a fixed message. Other messages are for humans and may change: check the type.
 
 ## Breaking Updates
 `0.3.x` -> `0.4.y`
@@ -135,38 +165,39 @@ Errors: invalid hex → `SyntaxError`; content that is not a well-formed string,
 - ed25519 secret keys must be exactly 32 bytes, symmetric keys at least 48 bytes, signatures 64 bytes.
 - Small-order public keys are rejected everywhere, and verification is strict RFC 8032 (no ZIP-215).
 - Strings with lone surrogates (`"a\uD800"`) throw instead of being silently changed to `"a�"`.
-- Node >= 20.
+- Byte inputs must be a `Uint8Array` (a `Buffer` is one) on a plain `ArrayBuffer`, also for the shas: `ArrayBuffer`, `DataView` and views on resizable or shared memory throw a `TypeError`.
+- Node >= 22 (tested), no promises for older runtimes.
 
 `0.2.x` -> `0.3.y`
 ------------------
-Since `v0.3.0` we have fixed some security concerns rooting from unauthenticated and unpadded use of AES-CBC.
+Since `v0.3.0` we have fixed some security concerns rooted in the unauthenticated and unpadded use of AES-CBC.
 
-This is the new salt function has changed significantly. It wraps the plaintext into an padded and verifiable envelope of random numbers.
+The salt function has changed significantly: it wraps the plaintext into a padded and verifiable envelope of random bytes.
 
-Also as a result of this we use this salt on our symmetricEncrypt function directly and don't leave it up to the developer to manually add the salt or not.
+As a result, `symmetricEncrypt` applies this salt itself instead of leaving it up to the developer.
 
-Also we decided to ditch backwards compatibility from this point dropping:
+We also dropped backwards compatibility from this point on, removing:
 
-- assymetricEncryptOld
-- assymetricDecryptOld
+- asymmetricEncryptOld
+- asymmetricDecryptOld
 - createRandomLengthSalt
 - removeSalt
 
-**Notice:** the inner Workings of the asymmetric encryption has changend. (Now we are sticking with the Edwards curve for multiplication instead of a Point Transformation to Montgomery coordinates for calculating the shared secret) 
+**Notice:** the inner workings of the asymmetric encryption have changed. (The shared secret is now computed on the Edwards curve instead of transforming the point to Montgomery coordinates.)
 
 These changes meant that 0.3.x could not decrypt secrets encrypted with an earlier version. Since 0.4.0 the [legacy entry point](#legacy-entry-point) reads all of them.
 
 ## Hex FTW
-It is advisable that you store all encrypted contents, signatures and keys in hex strings. This appears to be the most superior way of how to universally transfer byte information.
+We advise storing all encrypted contents, signatures and keys as hex strings. It is the most universal way to transfer byte information.
 
-The big wins of hex in readability and processability beats out the "downside" of being 2x the size. For keys, signatures and short content the conversion costs less than 1µs - not measurable next to the crypto. Only large content pays: at 1 MB hex encryption is ~1.5-3x and decryption up to ~10x slower than bytes. Pass a `Uint8Array` key there and you get bytes back.
+The big wins of hex in readability and processability beat the "downside" of being 2x the size. For keys, signatures and short content the conversion costs less than 1µs - not measurable next to the crypto. Only large content pays: at 1 MB hex encryption is ~1.5-3x and decryption up to ~10x slower than bytes. Pass a `Uint8Array` key there and you get bytes back.
 
 
 ## Encryption
 For the asymmetric encryption we use the ed25519 keys for an ElGamal-style X25519 shared secret with a one-time key. The symmetric key is `sha512(shared ‖ referencePoint)`, which then encrypts the content in [format v1](#symmetric-format-v1).
 
 The result of this kind of encryption is always an Object like:
-```json
+```js
 {
     "referencePointHex":"...",  // StringHex
     "encryptedContentHex":"...",  // StringHex
@@ -207,7 +238,7 @@ const gibbrish = await secUtl.symmetricEncrypt(content, keyHex)
 | DH / elGamal secrets 0.3.0 – 0.3.1 | `diffieHellmanSecretRawV0_3_1`, `diffieHellmanSecretHashV0_3_1` | re-derive with the main functions |
 
 - Don't know the version? Try the functions of that operation until one succeeds. They throw on wrong data, except `symmetricDecryptV0_2_0`, which can return garbage for a wrong key (~1/256): check that the plaintext makes sense.
-- Every legacy function takes hex or bytes like the main API, the key decides the mode.
+- Lenient on purpose, with no guarantees beyond reading the data: hex strings or any bytes (`Uint8Array`, `Buffer`, `ArrayBuffer`, `DataView`), a hex key gives hex results. Errors are whatever fails first.
 - For elGamal secrets the receiver passes the `referencePoint` as `publicKey`.
 - Re-deriving a shared secret means re-keying whatever the old secret protected.
 - Keys need no conversion: secret and public keys are identical in every version.
@@ -225,7 +256,7 @@ const gibbrish = await secUtl.symmetricEncrypt(content, keyHex)
   - non-canonical encodings of the key or R, and S ≥ L (no malleable signatures)
   
   Native WebCrypto implementations disagree on exactly these cases (bun and deno accept small-order keys and R, noble alone would accept cofactored-only signatures). We check them in JS before the native call, so every runtime and the fallback answer the same - except [WebKitGTK](#known-runtime-issues).
-- **Passwords:** `deriveSymKeyFromPassword` is PBKDF2-SHA256, 600000 iterations by default, with a random 16 byte salt (shorter salts throw). Passwords are NFC-normalized, so the same password typed on different platforms gives the same key. Random keys belong to `createSymKey`, not the KDF.
+- **Passwords:** `deriveSymKeyFromPassword` is PBKDF2-SHA256, 600000 iterations by default, with a random 16 byte salt (shorter salts throw). Passwords are NFC-normalized, so the same password typed on different platforms gives the same key. Any well-formed string is accepted, including the empty password `""`: enforcing a password policy is up to the application. Random keys belong to `createSymKey`, not the KDF.
 
 ### What this does not guarantee
 - **Decryption does not prove the sender.** Asymmetric encryption is not authenticated: anyone with the public key can encrypt. Symmetric encryption proves only that the sender knew the key. Sign the content if the sender matters.
@@ -238,29 +269,29 @@ const gibbrish = await secUtl.symmetricEncrypt(content, keyHex)
 ### Known runtime issues
 Both concern native Ed25519 in **WebKitGTK** (GNOME Web/Epiphany and other WebKitGTK browsers, tested with 2.54.2). Apple's Safari uses its own crypto and is untested. Every other tested runtime (node, deno, bun, Chromium, Chrome, Firefox) is unaffected.
 
-- **Large messages:** from 65536 bytes of content, `createSignature` throws and `verifySignature` returns `"Invalid signature!"` for *valid* signatures. Somewhere between 65000 and 65535 bytes the call hangs and never resolves. The bug is reported upstream to WebKit, and we expect it to be fixed. Until then, on WebKitGTK keep signed content below 65000 bytes, or sign a hash of it.
+- **Large messages** (handled): there, native Ed25519 throws from 65536 bytes of content, reports *valid* signatures as invalid, and hangs somewhere between 65000 and 65535 bytes. On WebKit engines (detected once on import, by the user agent's `AppleWebKit` version) messages from 32 KiB on are signed and verified with noble instead: same signatures and answers, slightly slower. This includes Safari and every iOS browser, untested whether they have the bug. Other engines keep native at every size. The bug is reported upstream to WebKit, and the switch goes once it is fixed.
 - **One edge case answers differently:** a signature from a key with a torsion component (mixed order) where `k·T8` is the identity is rejected there, and accepted everywhere else (cofactorless equation). Only a malicious signer can produce such a key, honest signatures verify the same everywhere.
 
 ## Salt Envelope
 *Legacy (v0.3.x), only read by `symmetricDecryptV0_3_1` of the [legacy entry point](#legacy-entry-point).*
 
-We random length prefix of random bytes to obsucate where potentially known plaintext could be.
+We add a random-length prefix of random bytes to obfuscate where potentially known plaintext could be.
 
-Also we also add a padding postfix, so never have a "virtually predictable" ending. 
+We also add a padding postfix, so there is never a "virtually predictable" ending.
 At the same time the padding verifies if the random prefix we added is still intact.
 
 ### Creation of the Salt Envelope
-- We decide a random length between 33 bytes and 160 bytes and fill it with random bytes (least one full block is full of random bytes)
-- We sum up all all bytes as Uint8 and write the sum as BE Uint16 to the next 2 bytes (we also make sure this condition is not accedentally met)
-- We calculate the required padding and write this number to be next byte (this is the full prefix then)
+- We decide a random length between 33 bytes and 160 bytes and fill it with random bytes (at least one full block of random bytes)
+- We sum up all bytes as Uint8 and write the sum as BE Uint16 to the next 2 bytes (we also make sure this condition is not accidentally met earlier)
+- We calculate the required padding and write this number to the next byte (this is the full prefix then)
 - We mirror the first bytes of the salt to fill the padding (this is the full postfix)
 - We write the prefix + plaintext + postfix as the new data to be encrypted
 
 ### Verification of the Salt Envelope
 - We start to sum up all bytes as Uint8
-- Along the way we check if the next 2bytes interpreted as BE Uint16 are equal to our sum
+- Along the way we check if the next 2 bytes interpreted as BE Uint16 are equal to our sum
 - If the condition is met we know the prefix length and postfix length - thus where the plaintext starts and ends
-- We check if the bytes of the postfix match the the expected ones in the prefix 
+- We check if the bytes of the postfix match the expected ones in the prefix 
 - If the postfix does not fully match the prefix, then we know the message has been corrupted
 - Also if the condition is not met within our expected limit, we know the message has been corrupted
 
@@ -308,12 +339,6 @@ sharedSecretHex == bobSharedSecret // true
 ## Noble ed25519
 The point arithmetic, key derivation and the fallback where WebCrypto has no Ed25519/X25519 are based on [noble-ed25519](https://github.com/paulmillr/noble-ed25519). A very concise and modern package for freely using the ed25519 algorithms. Big thanks for that!
 
----
-
-All sorts of inputs are welcome, thanks!
-
----
-
 
 # License
-[CCO](https://creativecommons.org/publicdomain/zero/1.0/)
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/)

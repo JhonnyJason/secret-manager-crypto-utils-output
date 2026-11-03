@@ -9,24 +9,10 @@ const subtle = globalThis.crypto.subtle
 
 //############################################################
 //#region internalFunctions
-// same type checks as index.js - thingy-byte-utils validates the content
-const hexToBytes = (hex) => {
-    if (typeof hex != "string") throw new TypeError("Expected a hex string!")
-    return tbut.hexToBytes(hex)
-}
-
-const checkBytes = (bytes) => {
-    if (!(bytes instanceof Uint8Array)) throw new TypeError("Expected a Uint8Array!")
-}
-
-const utf8 = (content) => {
-    if (typeof content != "string") throw new TypeError("Content must be a string!")
-    return tbut.utf8ToBytes(content)
-}
-
-// hex mode: a hex key gives hex results, a Uint8Array key gives Uint8Array results
+// lenient on purpose: whatever gets old data read - thingy-byte-utils checks strings, any byte flavor is copied to plain memory for WebCrypto
+// hex mode: a hex key gives hex results, a byte key gives Uint8Array results
 const isHex = (x) => typeof x == "string"
-const asBytes = (x) => isHex(x) ? hexToBytes(x) : x
+const asBytes = (x) => isHex(x) ? tbut.hexToBytes(x) : tbut.viewToBytes(x).slice()
 const asModeOf = (key, bytes) => isHex(key) ? tbut.bytesToHex(bytes) : bytes
 
 const concat = (a, b) => {
@@ -38,8 +24,6 @@ const concat = (a, b) => {
 
 // AES-256-CBC, iv = key[0:16], aesKey = key[16:48] - the iv is the same for every message
 const cbc = async (gibbrishBytes, keyBytes) => {
-    checkBytes(gibbrishBytes)
-    checkBytes(keyBytes)
     if (keyBytes.length < 48) throw new RangeError("Symmetric key must have at least 48 bytes!")
     const key = await subtle.importKey("raw", keyBytes.subarray(16, 48), { name: "AES-CBC" }, false, ["decrypt"])
     return new Uint8Array(await subtle.decrypt({ name: "AES-CBC", iv: keyBytes.subarray(0, 16) }, key, gibbrishBytes))
@@ -47,7 +31,6 @@ const cbc = async (gibbrishBytes, keyBytes) => {
 
 // k·A on the Edwards curve, k = clamped sha512(sk)[0:32] mod L - the same point in every noble version
 const edwardsSecret = async (secretKeyBytes, publicKeyBytes) => {
-    checkBytes(secretKeyBytes)
     const { scalar } = await ed.utils.getExtendedPublicKeyAsync(secretKeyBytes)
     const A = ed.Point.fromBytes(publicKeyBytes)
     if (A.isSmallOrder()) throw new RangeError("Invalid public key!")
@@ -107,7 +90,7 @@ export const asymmetricDecryptV0_3_1 = async (secrets, secretKey) => {
 // strict RFC 8032 with noble only: canonical encodings, small-order keys rejected
 export const verifySignatureV0_2_0 = async (sig, key, content) => {
     try {
-        const message = await sha256Bytes(utf8(content))
+        const message = await sha256Bytes(content)
         if (await ed.verifyAsync(asBytes(sig), message, asBytes(key), { zip215: false })) return undefined
         return "Invalid signature!"
     } catch { return "Malformed input!" }
@@ -120,7 +103,7 @@ export const verifySignatureV0_2_0 = async (sig, key, content) => {
 // 0.1.0 - 0.2.0: sha512(X25519 secret ‖ context) without the public keys - the raw secret is main's diffieHellmanSecretRaw
 export const diffieHellmanSecretHashV0_2_0 = async (secretKey, publicKey, contextString = "") => {
     const kBBytes = await diffieHellmanSecretRaw(asBytes(secretKey), asBytes(publicKey))
-    return asModeOf(secretKey, await sha512Bytes(concat(kBBytes, utf8(contextString))))
+    return asModeOf(secretKey, await sha512Bytes(concat(kBBytes, tbut.utf8ToBytes(contextString))))
 }
 
 // 0.3.0 - 0.3.1: the Edwards point k·B instead of X25519 - elGamal recovery: the receiver passes the referencePoint as publicKey
@@ -129,7 +112,7 @@ const diffieHellmanSecretRawBytesV0_3_1 = async (secretKeyBytes, publicKeyBytes)
 export const diffieHellmanSecretRawV0_3_1 = async (secretKey, publicKey) => asModeOf(secretKey, await diffieHellmanSecretRawBytesV0_3_1(asBytes(secretKey), asBytes(publicKey)))
 export const diffieHellmanSecretHashV0_3_1 = async (secretKey, publicKey, contextString = "") => {
     const kBBytes = await diffieHellmanSecretRawBytesV0_3_1(asBytes(secretKey), asBytes(publicKey))
-    return asModeOf(secretKey, await sha512Bytes(concat(kBBytes, utf8(contextString))))
+    return asModeOf(secretKey, await sha512Bytes(concat(kBBytes, tbut.utf8ToBytes(contextString))))
 }
 
 //#endregion
